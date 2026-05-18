@@ -1,5 +1,5 @@
 --[[
-    Veltrix UI  •  v2.2
+    Veltrix UI  •  v2.3
     Dark purple/blue theme. Compatible with Synapse X, KRNL, Fluxus, Script-Ware.
 ]]
 
@@ -80,6 +80,7 @@ local function lst(p, dir, gap)
     }, p)
 end
 
+-- lbl: consistent Gotham family throughout, no Code font except hex picker
 local function lbl(txt, col, sz, font, parent, props)
     props = props or {}
     props.BackgroundTransparency = 1
@@ -101,14 +102,15 @@ local function guiParent()
     return lp:WaitForChild("PlayerGui")
 end
 
--- Dragging: uses AbsolutePosition so initial scale-based centering doesn't break offsets
-local function makeDraggable(frame, handle, shouldClamp)
+-- Dragging: moves `target` (wrapper) via absolute position so initial centering
+-- via Scale doesn't corrupt the offset math.
+local function makeDraggable(target, handle, shouldClamp)
     local dragging, sp, sf = false, nil, nil
     handle.InputBegan:Connect(function(i)
         if i.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
         dragging = true
         sp = Vector2.new(i.Position.X, i.Position.Y)
-        sf = frame.AbsolutePosition
+        sf = target.AbsolutePosition
     end)
     handle.InputEnded:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
@@ -120,11 +122,11 @@ local function makeDraggable(frame, handle, shouldClamp)
         local ny = sf.Y + d.Y
         if shouldClamp and shouldClamp() then
             local vp = workspace.CurrentCamera.ViewportSize
-            local fs = frame.AbsoluteSize
-            nx = math.clamp(nx, 0, vp.X - fs.X)
-            ny = math.clamp(ny, 0, vp.Y - fs.Y)
+            local fs = target.AbsoluteSize
+            nx = math.clamp(nx, 0, math.max(0, vp.X - fs.X))
+            ny = math.clamp(ny, 0, math.max(0, vp.Y - fs.Y))
         end
-        frame.Position = UDim2.new(0, nx, 0, ny)
+        target.Position = UDim2.new(0, nx, 0, ny)
     end)
 end
 
@@ -159,29 +161,40 @@ function UI:Window(opts)
     }, guiParent())
     self._gui = gui
 
-    -- Main frame
-    local frame = mk("Frame", {
-        Size     = UDim2.new(0, WW, 0, WH),
-        Position = UDim2.new(.5, -WW/2, .5, -WH/2),
-        BackgroundColor3 = C.bg,
-        BorderSizePixel  = 0, ClipsDescendants = true, ZIndex = 2,
+    -- Outer wrapper provides the 1px border by using its background colour.
+    -- Using a wrapper+inner instead of UIStroke avoids square-corner artefacts
+    -- that some executors produce when UIStroke meets UICorner.
+    local normSz  = UDim2.new(0, WW+2, 0, WH+2)
+    local normPos = UDim2.new(.5, -(WW+2)/2, .5, -(WH+2)/2)
+
+    local wrapper = mk("Frame", {
+        Size = normSz, Position = normPos,
+        BackgroundColor3 = C.border, BorderSizePixel = 0, ZIndex = 2,
     }, gui)
+    rnd(wrapper, 13)
+    self._wrapper = wrapper
+
+    -- UIScale lives on the wrapper so fullscreen mode scales all content.
+    local uiScale = mk("UIScale", {Scale = 1}, wrapper)
+    self._uiScale = uiScale
+
+    local frame = mk("Frame", {
+        Size = UDim2.new(1,-2,1,-2), Position = UDim2.new(0,1,0,1),
+        BackgroundColor3 = C.bg, BorderSizePixel = 0, ClipsDescendants = true, ZIndex = 2,
+    }, wrapper)
     rnd(frame, 12)
-    bdr(frame, C.border, 1)
     self._frame = frame
 
-    -- 2px accent line at very top (solid accent colour, inset 1px for rounded corners)
+    -- Full-width accent line; ClipsDescendants on `frame` rounds its corners naturally.
     mk("Frame", {
-        Size = UDim2.new(1,-24,0,2), Position = UDim2.new(0,12,0,0),
+        Size = UDim2.new(1,0,0,2), Position = UDim2.new(0,0,0,0),
         BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 3,
     }, frame)
 
     -- Header
     local hdr = mk("Frame", {
-        Size = UDim2.new(1,0,0,HH),
-        Position = UDim2.new(0,0,0,2),
-        BackgroundColor3 = C.bg,
-        BorderSizePixel = 0, ZIndex = 3, Active = true,
+        Size = UDim2.new(1,0,0,HH), Position = UDim2.new(0,0,0,2),
+        BackgroundColor3 = C.bg, BorderSizePixel = 0, ZIndex = 3, Active = true,
     }, frame)
 
     local dot = mk("Frame", {
@@ -202,8 +215,7 @@ function UI:Window(opts)
 
     local function ctrlBtn(sym, col)
         local b = mk("TextButton", {
-            Size = UDim2.new(0,28,0,26),
-            BackgroundColor3 = C.card2,
+            Size = UDim2.new(0,28,0,26), BackgroundColor3 = C.card2,
             Text = sym, TextColor3 = col or C.sub,
             Font = Enum.Font.GothamBold, TextSize = 13,
             BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 5,
@@ -222,7 +234,8 @@ function UI:Window(opts)
         BackgroundColor3 = C.border, BorderSizePixel = 0, ZIndex = 4,
     }, hdr)
 
-    makeDraggable(frame, hdr, function() return self._clamp and not self._enlarged end)
+    -- Drag moves the outer wrapper, not the inner frame.
+    makeDraggable(wrapper, hdr, function() return self._clamp and not self._enlarged end)
 
     -- Sidebar
     local sbY = HH + 2
@@ -247,7 +260,7 @@ function UI:Window(opts)
         Size = UDim2.new(0,34,0,34), BackgroundColor3 = C.border,
         BorderSizePixel = 0, ZIndex = 5,
     }, uCard)
-    rnd(avWrap, 99); bdr(avWrap, C.border, 1)
+    rnd(avWrap, 99)
     local avImg = mk("ImageLabel", {
         Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, ZIndex = 6,
     }, avWrap)
@@ -267,7 +280,7 @@ function UI:Window(opts)
     lbl("@"..lp.Name, C.muted, 10, Enum.Font.Gotham, uCard, {
         Size = UDim2.new(1,-42,0,13), Position = UDim2.new(0,42,0,18), ZIndex = 5,
     })
-    local keyLbl = lbl("Key: ...", C.muted, 10, Enum.Font.Code, uCard, {
+    local keyLbl = lbl("Key: ...", C.muted, 10, Enum.Font.Gotham, uCard, {
         Size = UDim2.new(1,0,0,13), Position = UDim2.new(0,0,0,38), ZIndex = 5,
     })
 
@@ -293,7 +306,6 @@ function UI:Window(opts)
         keyLbl.Text = "Key: not set"
     end
 
-    -- Divider moved closer to user card (y=76 instead of y=90)
     mk("Frame", {
         Size = UDim2.new(1,-20,0,1), Position = UDim2.new(0,10,0,76),
         BackgroundColor3 = C.border, BorderSizePixel = 0, ZIndex = 4,
@@ -318,7 +330,6 @@ function UI:Window(opts)
         Size = UDim2.new(0,cW,0,srchH), Position = UDim2.new(0,cX,0,cY),
         BackgroundColor3 = C.bg, BorderSizePixel = 0, ZIndex = 3,
     }, frame)
-
     local srchBox = mk("TextBox", {
         Size = UDim2.new(1,-16,1,-10), Position = UDim2.new(0,10,0,5),
         BackgroundTransparency = 1,
@@ -342,8 +353,7 @@ function UI:Window(opts)
 
     local srchOverlay = mk("ScrollingFrame", {
         Size = UDim2.new(1,0,1,0), BackgroundColor3 = C.bg,
-        BorderSizePixel = 0, ScrollBarThickness = 3,
-        ScrollBarImageColor3 = C.accent,
+        BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = C.accent,
         CanvasSize = UDim2.new(0,0,0,0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
         Visible = false, ZIndex = 10,
     }, contentArea)
@@ -351,34 +361,41 @@ function UI:Window(opts)
     lst(srchOverlay, Enum.FillDirection.Vertical, 4)
     self._srchOverlay = srchOverlay
 
-    -- Window controls
-    local normSz  = UDim2.new(0,WW,0,WH)
-    local normPos = UDim2.new(.5,-WW/2,.5,-WH/2)
-
+    -- Controls
     local function setVis(v)
         self._visible = v; frame.Visible = v
     end
 
-    local kc = UIS.InputBegan:Connect(function(i, gp)
-        if gp then return end
+    -- No gp check on keyboard so modifier keys like RightShift work as toggle.
+    local kc = UIS.InputBegan:Connect(function(i)
+        if i.UserInputType ~= Enum.UserInputType.Keyboard then return end
         if i.KeyCode == self._uiKey   then setVis(not self._visible) end
         if i.KeyCode == self._panicKey then self:_destroy() end
     end)
     table.insert(self._conns, kc)
 
+    -- Fullscreen: scale content via UIScale so layout proportions are preserved.
     enlargeBtn.MouseButton1Click:Connect(function()
         self._enlarged = not self._enlarged
         if self._enlarged then
-            tw(frame,{Size=UDim2.new(1,0,1,0),Position=UDim2.new(0,0,0,0)},.2,Enum.EasingStyle.Quart)
+            self._preFS = wrapper.Position
+            local vp = workspace.CurrentCamera.ViewportSize
+            local s  = math.min(vp.X / (WW+2), vp.Y / (WH+2))
+            uiScale.Scale = s
+            local sw = math.floor((WW+2)*s + .5)
+            local sh = math.floor((WH+2)*s + .5)
+            wrapper.Position = UDim2.new(0, math.floor((vp.X-sw)/2), 0, math.floor((vp.Y-sh)/2))
             enlargeBtn.Text = "-"
         else
-            tw(frame,{Size=normSz,Position=normPos},.2,Enum.EasingStyle.Quart)
+            uiScale.Scale = 1
+            wrapper.Position = self._preFS or normPos
             enlargeBtn.Text = "+"
         end
     end)
+
     closeBtn.MouseButton1Click:Connect(function() setVis(false) end)
 
-    -- Uptime heartbeat
+    -- Uptime
     self._uptimeFns = {}
     local uc = Run.Heartbeat:Connect(function()
         local e = tick() - self._startTime
@@ -418,28 +435,22 @@ function UI:_srchCard(el)
         BorderSizePixel = 0, ZIndex = 11, Text = "", AutoButtonColor = false,
     }, self._srchOverlay)
     rnd(card, 8); bdr(card, C.border, 1)
-
     card.MouseEnter:Connect(function() tw(card,{BackgroundColor3=C.card2},.08) end)
     card.MouseLeave:Connect(function() tw(card,{BackgroundColor3=C.card},.08) end)
-
     card.MouseButton1Click:Connect(function()
         for _, tab in ipairs(self._tabs) do
-            if tab._name == el._tabName then
-                self:_selectTab(tab)
-                break
-            end
+            if tab._name == el._tabName then self:_selectTab(tab); break end
         end
         self._srchBox.Text = ""
         self._srchOverlay.Visible = false
     end)
-
     lbl(el._name or "", C.text, 12, Enum.Font.GothamBold, card, {
         Size = UDim2.new(1,-100,0,16), Position = UDim2.new(0,10,0,6), ZIndex = 12,
     })
     lbl(el._desc ~= "" and el._desc or el._type, C.muted, 10, Enum.Font.Gotham, card, {
         Size = UDim2.new(1,-100,0,13), Position = UDim2.new(0,10,0,24), ZIndex = 12,
     })
-    local loc = (el._tabName or "") .. (el._segName and (" > "..el._segName) or "")
+    local loc = (el._tabName or "")..(el._segName and (" > "..el._segName) or "")
     lbl(loc, C.accent, 10, Enum.Font.Gotham, card, {
         Size = UDim2.new(0,90,1,0), Position = UDim2.new(1,-96,0,0),
         TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 12,
@@ -451,10 +462,8 @@ end
 -- =============================================================================
 function UI:Tab(name, icon)
     local td = setmetatable({ _name = name, _win = self }, { __index = Tab })
-
     local tabBtn = mk("TextButton", {
-        Size = UDim2.new(1,0,0,30),
-        BackgroundColor3 = C.bg,
+        Size = UDim2.new(1,0,0,30), BackgroundColor3 = C.bg,
         Text = (icon and (icon.."  ") or "") .. name,
         TextColor3 = C.muted, Font = Enum.Font.Gotham, TextSize = 12,
         BorderSizePixel = 0, AutoButtonColor = false,
@@ -464,12 +473,10 @@ function UI:Tab(name, icon)
     td._btn = tabBtn
 
     local scroll = mk("ScrollingFrame", {
-        Size = UDim2.new(1,0,1,0),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
+        Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, BorderSizePixel = 0,
         ScrollBarThickness = 3, ScrollBarImageColor3 = C.accent,
         CanvasSize = UDim2.new(0,0,0,0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ScrollingDirection = Enum.ScrollingDirection.Y,
-        Visible = false, ZIndex = 4,
+        ScrollingDirection = Enum.ScrollingDirection.Y, Visible = false, ZIndex = 4,
     }, self._contentArea)
     pad(scroll, 14,14,14,14)
     lst(scroll, Enum.FillDirection.Vertical, 16)
@@ -478,7 +485,6 @@ function UI:Tab(name, icon)
     tabBtn.MouseButton1Click:Connect(function() self:_selectTab(td) end)
     table.insert(self._tabs, td)
     if #self._tabs == 1 then self:_selectTab(td) end
-
     return td
 end
 
@@ -497,59 +503,48 @@ end
 --  SEGMENT
 -- =============================================================================
 function Tab:Segment(name)
-    local seg = setmetatable({ _name = name, _tab = self, _win = self._win },
-        { __index = Segment })
-
+    local seg = setmetatable({ _name=name, _tab=self, _win=self._win }, { __index=Segment })
     local wrapper = mk("Frame", {
-        Size = UDim2.new(1,0,0,0),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
-        AutomaticSize = Enum.AutomaticSize.Y, ZIndex = 5,
+        Size = UDim2.new(1,0,0,0), BackgroundTransparency=1, BorderSizePixel=0,
+        AutomaticSize = Enum.AutomaticSize.Y, ZIndex=5,
     }, self._scroll)
     lst(wrapper, Enum.FillDirection.Vertical, 6)
-
     lbl(name:upper(), C.muted, 10, Enum.Font.GothamBold, wrapper, {
-        Size = UDim2.new(1,0,0,14), ZIndex = 6,
+        Size = UDim2.new(1,0,0,14), ZIndex=6,
     })
     mk("Frame", {
-        Size = UDim2.new(1,0,0,1), BackgroundColor3 = C.border,
-        BorderSizePixel = 0, ZIndex = 6,
+        Size = UDim2.new(1,0,0,1), BackgroundColor3=C.border, BorderSizePixel=0, ZIndex=6,
     }, wrapper)
-
     local content = mk("Frame", {
-        Size = UDim2.new(1,0,0,0),
-        BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.Y,
-        BorderSizePixel = 0, ZIndex = 6,
+        Size = UDim2.new(1,0,0,0), BackgroundTransparency=1,
+        AutomaticSize = Enum.AutomaticSize.Y, BorderSizePixel=0, ZIndex=6,
     }, wrapper)
     lst(content, Enum.FillDirection.Vertical, 2)
     seg._content = content
     return seg
 end
 
--- Element helpers
 local function eRow(parent, h)
     return mk("Frame", {
-        Size = UDim2.new(1,0,0,h), BackgroundTransparency = 1,
-        BorderSizePixel = 0, ZIndex = 7,
+        Size = UDim2.new(1,0,0,h), BackgroundTransparency=1, BorderSizePixel=0, ZIndex=7,
     }, parent)
 end
 
 local function eNames(row, name, desc, h)
     local ny = desc ~= "" and 4 or math.floor(h/2)-8
     lbl(name, C.text, 13, Enum.Font.Gotham, row, {
-        Size = UDim2.new(LBLW,0,0,17), Position = UDim2.new(0,0,0,ny), ZIndex = 8,
+        Size = UDim2.new(LBLW,0,0,17), Position = UDim2.new(0,0,0,ny), ZIndex=8,
     })
     if desc ~= "" then
         lbl(desc, C.muted, 10, Enum.Font.Gotham, row, {
-            Size = UDim2.new(LBLW,0,0,13), Position = UDim2.new(0,0,0,22), ZIndex = 8,
+            Size = UDim2.new(LBLW,0,0,13), Position = UDim2.new(0,0,0,22), ZIndex=8,
         })
     end
 end
 
 local function regEl(seg, name, desc, etype)
-    local el = {
-        _name=name, _desc=desc or "", _type=etype,
-        _tabName=seg._tab._name, _segName=seg._name,
-    }
+    local el = { _name=name, _desc=desc or "", _type=etype,
+                 _tabName=seg._tab._name, _segName=seg._name }
     table.insert(seg._win._elements, el)
     return el
 end
@@ -558,7 +553,7 @@ end
 --  BUTTON
 -- =============================================================================
 function Segment:Button(name, opts, cb)
-    if type(opts) == "function" then cb=opts; opts={} end
+    if type(opts)=="function" then cb=opts; opts={} end
     opts = opts or {}
     local desc = opts.Description or ""
     local h    = desc ~= "" and EHD or EH
@@ -587,44 +582,48 @@ function Segment:Button(name, opts, cb)
 end
 
 -- =============================================================================
---  HOLD BUTTON  — progress bar sits below the button text
+--  HOLD BUTTON  — fill grows inside the button, text sits on top
 -- =============================================================================
 function Segment:HoldButton(name, opts, cb)
-    if type(opts) == "function" then cb=opts; opts={} end
+    if type(opts)=="function" then cb=opts; opts={} end
     opts = opts or {}
     local desc     = opts.Description or ""
     local holdTime = opts.HoldTime or 1.5
-    local h        = (desc ~= "" and EHD or EH) + 10
+    local h        = desc ~= "" and EHD or EH
     local el       = regEl(self, name, desc, "HoldButton")
     local row      = eRow(self._content, h)
     eNames(row, name, desc, h)
 
     local W = 80
-    local btn = mk("TextButton", {
-        Size = UDim2.new(0,W,0,24), Position = UDim2.new(1,-W-ERPAD,0.5,-18),
-        BackgroundColor3 = C.card2,
-        Text = "Hold", TextColor3 = C.sub,
-        Font = Enum.Font.GothamBold, TextSize = 12,
-        BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 8,
+    -- Outer container (acts as button background)
+    local btnFrame = mk("Frame", {
+        Size = UDim2.new(0,W,0,24), Position = UDim2.new(1,-W-ERPAD,0.5,-12),
+        BackgroundColor3 = C.card2, BorderSizePixel = 0, ZIndex = 8,
+        ClipsDescendants = true,
     }, row)
-    rnd(btn, 6); bdr(btn, C.border, 1)
+    rnd(btnFrame, 6); bdr(btnFrame, C.border, 1)
 
-    -- Progress bar below the button (different colour from accent)
-    local track = mk("Frame", {
-        Size = UDim2.new(0,W,0,3), Position = UDim2.new(1,-W-ERPAD,0.5,10),
-        BackgroundColor3 = C.border, BorderSizePixel = 0, ZIndex = 8,
-    }, row)
-    rnd(track, 99)
+    -- Fill that grows left-to-right behind the text
     local fill = mk("Frame", {
         Size = UDim2.new(0,0,1,0), BackgroundColor3 = C.green,
-        BorderSizePixel = 0, ZIndex = 9,
-    }, track)
-    rnd(fill, 99)
+        BorderSizePixel = 0, ZIndex = 8,
+    }, btnFrame)
+
+    -- Text label always on top of the fill
+    local textLbl = lbl("Hold", C.sub, 12, Enum.Font.GothamBold, btnFrame, {
+        Size = UDim2.new(1,0,1,0), TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 9,
+    })
+
+    -- Invisible click-catcher on top of everything
+    local clickBtn = mk("TextButton", {
+        Size = UDim2.new(1,0,1,0), BackgroundTransparency=1,
+        Text="", ZIndex=10, BorderSizePixel=0, AutoButtonColor=false,
+    }, btnFrame)
 
     local held, hConn = false, nil
-    btn.InputBegan:Connect(function(i)
+    clickBtn.InputBegan:Connect(function(i)
         if i.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-        held = true; btn.TextColor3 = C.text
+        held = true; textLbl.TextColor3 = C.text
         local t0 = tick()
         hConn = Run.Heartbeat:Connect(function()
             if not held then hConn:Disconnect(); return end
@@ -632,26 +631,26 @@ function Segment:HoldButton(name, opts, cb)
             fill.Size = UDim2.new(p,0,1,0)
             if p >= 1 then
                 held=false; hConn:Disconnect()
-                btn.TextColor3 = C.sub
+                textLbl.TextColor3 = C.sub
                 tw(fill,{Size=UDim2.new(0,0,1,0)},.15)
                 if cb then task.spawn(cb) end
             end
         end)
     end)
-    btn.InputEnded:Connect(function(i)
+    clickBtn.InputEnded:Connect(function(i)
         if i.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-        held=false; btn.TextColor3 = C.sub
+        held=false; textLbl.TextColor3 = C.sub
         tw(fill,{Size=UDim2.new(0,0,1,0)},.15)
     end)
-    el._instance = btn
+    el._instance = btnFrame
     return el
 end
 
 -- =============================================================================
---  TOGGLE  — minimal keybind chip to the left of the pill
+--  TOGGLE  — minimal key chip left of pill, no gp filter on rebind
 -- =============================================================================
 function Segment:Toggle(name, opts, cb)
-    if type(opts) == "function" then cb=opts; opts={} end
+    if type(opts)=="function" then cb=opts; opts={} end
     opts = opts or {}
     local desc     = opts.Description or ""
     local default  = opts.Default ~= false
@@ -664,13 +663,10 @@ function Segment:Toggle(name, opts, cb)
     eNames(row, name, desc, h)
 
     local PW, PH = 36, 20
-    -- shift pill left when bindable to make room for key chip
-    local pillOff = bindable and (PW + 42 + ERPAD) or (PW + ERPAD)
+    local pillOff = bindable and (PW + 44 + ERPAD) or (PW + ERPAD)
     local pill = mk("Frame", {
-        Size = UDim2.new(0,PW,0,PH),
-        Position = UDim2.new(1,-pillOff,0.5,-PH/2),
-        BackgroundColor3 = default and C.accent or C.border,
-        BorderSizePixel = 0, ZIndex = 8,
+        Size = UDim2.new(0,PW,0,PH), Position = UDim2.new(1,-pillOff,0.5,-PH/2),
+        BackgroundColor3 = default and C.accent or C.border, BorderSizePixel=0, ZIndex=8,
     }, row)
     rnd(pill, 99)
 
@@ -678,7 +674,7 @@ function Segment:Toggle(name, opts, cb)
     local knob = mk("Frame", {
         Size = UDim2.new(0,KS,0,KS),
         Position = UDim2.new(0, default and PW-KS-3 or 3, 0.5, -KS/2),
-        BackgroundColor3 = C.white, BorderSizePixel = 0, ZIndex = 9,
+        BackgroundColor3 = C.white, BorderSizePixel=0, ZIndex=9,
     }, pill)
     rnd(knob, 99)
 
@@ -697,11 +693,11 @@ function Segment:Toggle(name, opts, cb)
     if bindable then
         local boundKey = nil
         local bBtn = mk("TextButton", {
-            Size = UDim2.new(0,38,0,18),
+            Size = UDim2.new(0,40,0,18),
             Position = UDim2.new(1,-pillOff+PW+6,0.5,-9),
             BackgroundColor3 = C.card2,
             Text = "none", TextColor3 = C.muted,
-            Font = Enum.Font.Code, TextSize = 10,
+            Font = Enum.Font.Gotham, TextSize = 10,
             BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 8,
         }, row)
         rnd(bBtn, 4); bdr(bBtn, C.border, 1)
@@ -711,16 +707,15 @@ function Segment:Toggle(name, opts, cb)
             if listening then return end
             listening = true; bBtn.Text = "..."; bBtn.TextColor3 = C.yellow
             local c; c = UIS.InputBegan:Connect(function(i)
-                -- no gp check so RightShift and similar modifier keys are captured
                 if i.UserInputType ~= Enum.UserInputType.Keyboard then return end
                 boundKey = i.KeyCode
-                bBtn.Text = i.KeyCode.Name:sub(1,7)
+                bBtn.Text = i.KeyCode.Name:sub(1,8)
                 bBtn.TextColor3 = C.accent
                 listening = false; c:Disconnect()
             end)
         end)
-        local bc = UIS.InputBegan:Connect(function(i, gp)
-            if gp then return end
+        local bc = UIS.InputBegan:Connect(function(i)
+            if i.UserInputType ~= Enum.UserInputType.Keyboard then return end
             if boundKey and i.KeyCode == boundKey then setState(not el._value, true) end
         end)
         table.insert(self._win._conns, bc)
@@ -731,10 +726,10 @@ function Segment:Toggle(name, opts, cb)
 end
 
 -- =============================================================================
---  SLIDER  — solid accent fill, no gradient
+--  SLIDER  — solid fill, consistent Gotham font
 -- =============================================================================
 function Segment:Slider(name, opts, cb)
-    if type(opts) == "function" then cb=opts; opts={} end
+    if type(opts)=="function" then cb=opts; opts={} end
     opts = opts or {}
     local desc   = opts.Description or ""
     local mn     = opts.Min or 0
@@ -748,50 +743,48 @@ function Segment:Slider(name, opts, cb)
 
     local h   = desc ~= "" and 56 or 44
     local row = eRow(self._content, h)
-
     lbl(name, C.text, 13, Enum.Font.Gotham, row, {
-        Size = UDim2.new(LBLW,0,0,17), Position = UDim2.new(0,0,0,2), ZIndex = 8,
+        Size = UDim2.new(LBLW,0,0,17), Position = UDim2.new(0,0,0,2), ZIndex=8,
     })
     if desc ~= "" then
         lbl(desc, C.muted, 10, Enum.Font.Gotham, row, {
-            Size = UDim2.new(1,0,0,13), Position = UDim2.new(0,0,0,20), ZIndex = 8,
+            Size = UDim2.new(1,0,0,13), Position = UDim2.new(0,0,0,20), ZIndex=8,
         })
     end
-    local valLbl = lbl(def..suffix, C.accent, 12, Enum.Font.Code, row, {
+    local valLbl = lbl(def..suffix, C.accent, 12, Enum.Font.Gotham, row, {
         Size = UDim2.new(1-LBLW,-ERPAD,0,17), Position = UDim2.new(LBLW,0,0,2),
-        TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 8,
+        TextXAlignment = Enum.TextXAlignment.Right, ZIndex=8,
     })
 
     local track = mk("Frame", {
         Size = UDim2.new(1,-ERPAD,0,6), Position = UDim2.new(0,0,1,-10),
-        BackgroundColor3 = C.border, BorderSizePixel = 0, ZIndex = 8,
+        BackgroundColor3 = C.border, BorderSizePixel=0, ZIndex=8,
     }, row)
     rnd(track, 99)
 
     local p0   = (def-mn)/(mx-mn)
     local fill = mk("Frame", {
-        Size = UDim2.new(p0,0,1,0), BackgroundColor3 = C.accent,
-        BorderSizePixel = 0, ZIndex = 9,
+        Size = UDim2.new(p0,0,1,0), BackgroundColor3=C.accent,
+        BorderSizePixel=0, ZIndex=9,
     }, track)
     rnd(fill, 99)
 
     local thumb = mk("Frame", {
         Size = UDim2.new(0,14,0,14), AnchorPoint = Vector2.new(.5,.5),
         Position = UDim2.new(p0,0,.5,0),
-        BackgroundColor3 = C.white, BorderSizePixel = 0, ZIndex = 10,
+        BackgroundColor3=C.white, BorderSizePixel=0, ZIndex=10,
     }, track)
     rnd(thumb, 99); bdr(thumb, C.border, 1.5)
 
     local function set(pct)
         pct = math.clamp(pct, 0, 1)
         local v = math.floor(mn + pct*(mx-mn) + .5)
-        el._value = v
-        valLbl.Text = v..suffix
-        fill.Size   = UDim2.new(pct,0,1,0)
+        el._value = v; valLbl.Text = v..suffix
+        fill.Size = UDim2.new(pct,0,1,0)
         thumb.Position = UDim2.new(pct,0,.5,0)
         if cb then task.spawn(cb, v) end
     end
-    el._setValue = function(pct) set(pct) end
+    el._setValue = set
 
     local drag = false
     local function onPos(px)
@@ -799,16 +792,16 @@ function Segment:Slider(name, opts, cb)
     end
     track.InputBegan:Connect(function(i)
         if i.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-        drag = true; onPos(i.Position.X)
+        drag=true; onPos(i.Position.X)
     end)
     thumb.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = true end
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then drag=true end
     end)
     UIS.InputEnded:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then drag=false end
     end)
     UIS.InputChanged:Connect(function(i)
-        if drag and i.UserInputType == Enum.UserInputType.MouseMovement then
+        if drag and i.UserInputType==Enum.UserInputType.MouseMovement then
             onPos(i.Position.X)
         end
     end)
@@ -820,7 +813,7 @@ end
 --  INPUT
 -- =============================================================================
 function Segment:Input(name, opts, cb)
-    if type(opts) == "function" then cb=opts; opts={} end
+    if type(opts)=="function" then cb=opts; opts={} end
     opts = opts or {}
     local desc    = opts.Description or ""
     local numeric = opts.Numeric == true
@@ -830,51 +823,50 @@ function Segment:Input(name, opts, cb)
     local h   = desc ~= "" and 62 or 52
     local row = eRow(self._content, h)
     lbl(name, C.text, 13, Enum.Font.Gotham, row, {
-        Size = UDim2.new(1,0,0,17), Position = UDim2.new(0,0,0,2), ZIndex = 8,
+        Size = UDim2.new(1,0,0,17), Position = UDim2.new(0,0,0,2), ZIndex=8,
     })
     if desc ~= "" then
         lbl(desc, C.muted, 10, Enum.Font.Gotham, row, {
-            Size = UDim2.new(1,0,0,13), Position = UDim2.new(0,0,0,20), ZIndex = 8,
+            Size = UDim2.new(1,0,0,13), Position = UDim2.new(0,0,0,20), ZIndex=8,
         })
     end
-
     local by = desc ~= "" and 36 or 24
     local bg = mk("Frame", {
         Size = UDim2.new(1,-ERPAD,0,24), Position = UDim2.new(0,0,0,by),
-        BackgroundColor3 = C.card2, BorderSizePixel = 0, ZIndex = 8,
+        BackgroundColor3=C.card2, BorderSizePixel=0, ZIndex=8,
     }, row)
     rnd(bg, 6)
     local st = bdr(bg, C.border, 1)
     pad(bg, 0,8,0,8)
 
     local box = mk("TextBox", {
-        Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1,
+        Size = UDim2.new(1,0,1,0), BackgroundTransparency=1,
         PlaceholderText = opts.Placeholder or "Enter value...",
-        PlaceholderColor3 = C.muted, Text = el._value,
-        TextColor3 = C.text, Font = Enum.Font.Code, TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ClearTextOnFocus = false, ZIndex = 9,
+        PlaceholderColor3=C.muted, Text=el._value,
+        TextColor3=C.text, Font=Enum.Font.Gotham, TextSize=12,
+        TextXAlignment=Enum.TextXAlignment.Left,
+        ClearTextOnFocus=false, ZIndex=9,
     }, bg)
-    box.Focused:Connect(function()  st.Color = C.accent end)
+    box.Focused:Connect(function()  st.Color=C.accent end)
     box.FocusLost:Connect(function()
-        st.Color = C.border
+        st.Color=C.border
         if numeric then
-            local n = tonumber(box.Text)
+            local n=tonumber(box.Text)
             box.Text = n and tostring(n) or ""
         end
-        el._value = box.Text
+        el._value=box.Text
         if cb then task.spawn(cb, el._value) end
     end)
-    box:GetPropertyChangedSignal("Text"):Connect(function() el._value = box.Text end)
+    box:GetPropertyChangedSignal("Text"):Connect(function() el._value=box.Text end)
     el._instance = box
     return el
 end
 
 -- =============================================================================
---  DROPDOWN  — backdrop button for reliable click detection, UIListLayout items
+--  DROPDOWN  — backdrop catch, UIListLayout, arrow toggles v/^
 -- =============================================================================
 function Segment:Dropdown(name, opts, cb)
-    if type(opts) == "function" then cb=opts; opts={} end
+    if type(opts)=="function" then cb=opts; opts={} end
     opts = opts or {}
     local desc  = opts.Description or ""
     local multi = opts.Multi == true
@@ -883,117 +875,115 @@ function Segment:Dropdown(name, opts, cb)
     el._opts    = type(opts.Options)=="table" and opts.Options or {}
 
     local function getOptions()
-        if type(opts.Options) == "function" then return opts.Options() end
+        if type(opts.Options)=="function" then return opts.Options() end
         return el._opts or {}
     end
 
     local h   = desc ~= "" and 60 or 50
     local row = eRow(self._content, h)
     lbl(name, C.text, 13, Enum.Font.Gotham, row, {
-        Size = UDim2.new(1,0,0,17), Position = UDim2.new(0,0,0,2), ZIndex = 8,
+        Size = UDim2.new(1,0,0,17), Position = UDim2.new(0,0,0,2), ZIndex=8,
     })
     if desc ~= "" then
         lbl(desc, C.muted, 10, Enum.Font.Gotham, row, {
-            Size = UDim2.new(1,0,0,13), Position = UDim2.new(0,0,0,20), ZIndex = 8,
+            Size = UDim2.new(1,0,0,13), Position = UDim2.new(0,0,0,20), ZIndex=8,
         })
     end
 
     local dy = desc ~= "" and 36 or 24
     local ddBtn = mk("TextButton", {
         Size = UDim2.new(1,-ERPAD,0,24), Position = UDim2.new(0,0,0,dy),
-        BackgroundColor3 = C.card2, Text = "",
-        BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 8,
+        BackgroundColor3=C.card2, Text="",
+        BorderSizePixel=0, AutoButtonColor=false, ZIndex=8,
     }, row)
     rnd(ddBtn, 6); bdr(ddBtn, C.border, 1)
     pad(ddBtn, 0,20,0,8)
 
     local function displayText()
         if multi then
-            local sel = {}
+            local sel={}
             for k,v in pairs(el._value) do if v then table.insert(sel,k) end end
-            return #sel > 0 and table.concat(sel,", ") or "Select..."
+            return #sel>0 and table.concat(sel,", ") or "Select..."
         end
         return tostring(el._value or "Select...")
     end
 
     local ddLbl = lbl(displayText(), C.text, 12, Enum.Font.Gotham, ddBtn, {
-        Size = UDim2.new(1,0,1,0), ZIndex = 9,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
+        Size = UDim2.new(1,-18,1,0), ZIndex=9,
+        TextXAlignment=Enum.TextXAlignment.Left,
+        TextTruncate=Enum.TextTruncate.AtEnd,
     })
-    lbl("v", C.muted, 10, Enum.Font.GothamBold, ddBtn, {
-        Size = UDim2.new(0,14,1,0), Position = UDim2.new(1,-16,0,0),
-        TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 9,
+    -- Arrow: sits flush at right edge, toggles between v and ^
+    local arrowLbl = lbl("v", C.muted, 10, Enum.Font.GothamBold, ddBtn, {
+        Size = UDim2.new(0,16,1,0), Position = UDim2.new(1,-17,0,0),
+        TextXAlignment=Enum.TextXAlignment.Center, ZIndex=9,
     })
 
     local open, listFr, backdrop = false, nil, nil
 
     local function closeList()
-        if listFr then listFr:Destroy(); listFr = nil end
-        if backdrop then backdrop:Destroy(); backdrop = nil end
+        if listFr then listFr:Destroy(); listFr=nil end
+        if backdrop then backdrop:Destroy(); backdrop=nil end
+        arrowLbl.Text = "v"
         open = false
     end
 
     ddBtn.MouseButton1Click:Connect(function()
         if open then closeList(); return end
         open = true
+        arrowLbl.Text = "^"
         local options = getOptions()
         local ap = ddBtn.AbsolutePosition
         local as = ddBtn.AbsoluteSize
         local IH = 28
         local LH = math.min(#options * IH, 168)
 
-        -- Full-screen transparent backdrop catches outside clicks
         backdrop = mk("TextButton", {
-            Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1,
-            Text = "", ZIndex = 48, BorderSizePixel = 0,
+            Size=UDim2.new(1,0,1,0), BackgroundTransparency=1,
+            Text="", ZIndex=48, BorderSizePixel=0,
         }, self._win._gui)
         backdrop.MouseButton1Click:Connect(closeList)
 
         listFr = mk("Frame", {
             Size = UDim2.new(0,as.X,0,LH),
             Position = UDim2.new(0,ap.X,0,ap.Y+as.Y+3),
-            BackgroundColor3 = C.card, BorderSizePixel = 0, ZIndex = 50,
-            ClipsDescendants = true,
+            BackgroundColor3=C.card, BorderSizePixel=0, ZIndex=50, ClipsDescendants=true,
         }, self._win._gui)
         rnd(listFr, 7); bdr(listFr, C.border, 1)
 
         local scroll = mk("ScrollingFrame", {
-            Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1,
-            BorderSizePixel = 0, ScrollBarThickness = 2,
-            ScrollBarImageColor3 = C.accent,
-            CanvasSize = UDim2.new(0,0,0,0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-            ZIndex = 51,
+            Size=UDim2.new(1,0,1,0), BackgroundTransparency=1,
+            BorderSizePixel=0, ScrollBarThickness=2, ScrollBarImageColor3=C.accent,
+            CanvasSize=UDim2.new(0,0,0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y,
+            ZIndex=51,
         }, listFr)
         lst(scroll, Enum.FillDirection.Vertical, 0)
 
         for _, opt in ipairs(options) do
-            local isSel = multi and el._value[opt] or (el._value == opt)
+            local isSel = multi and el._value[opt] or (el._value==opt)
             local item = mk("TextButton", {
                 Size = UDim2.new(1,0,0,IH),
                 BackgroundColor3 = isSel and Color3.fromRGB(26,20,50) or C.card,
-                Text = "", BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 52,
+                Text="", BorderSizePixel=0, AutoButtonColor=false, ZIndex=52,
             }, scroll)
             pad(item, 0,8,0,10)
 
             local itxt = lbl(tostring(opt), isSel and C.accent or C.sub, 12, Enum.Font.Gotham, item, {
-                Size = UDim2.new(1, multi and -22 or 0, 1,0), ZIndex = 53,
-                TextXAlignment = Enum.TextXAlignment.Left,
+                Size=UDim2.new(1, multi and -22 or 0, 1,0), ZIndex=53,
+                TextXAlignment=Enum.TextXAlignment.Left,
             })
             local chkLbl
             if multi then
                 chkLbl = lbl(isSel and "v" or "", C.green, 11, Enum.Font.GothamBold, item, {
-                    Size = UDim2.new(0,18,1,0), Position = UDim2.new(1,-20,0,0),
-                    TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 53,
+                    Size=UDim2.new(0,18,1,0), Position=UDim2.new(1,-20,0,0),
+                    TextXAlignment=Enum.TextXAlignment.Center, ZIndex=53,
                 })
             end
-
             item.MouseEnter:Connect(function() tw(item,{BackgroundColor3=C.card2},.08) end)
             item.MouseLeave:Connect(function()
                 local s = multi and el._value[opt] or (el._value==opt)
                 tw(item,{BackgroundColor3=s and Color3.fromRGB(26,20,50) or C.card},.08)
             end)
-
             if multi then
                 item.MouseButton1Click:Connect(function()
                     el._value[opt] = not el._value[opt]
@@ -1005,7 +995,7 @@ function Segment:Dropdown(name, opts, cb)
                 end)
             else
                 item.MouseButton1Click:Connect(function()
-                    el._value = opt; ddLbl.Text = displayText()
+                    el._value=opt; ddLbl.Text=displayText()
                     closeList()
                     if cb then task.spawn(cb, opt) end
                 end)
@@ -1014,8 +1004,8 @@ function Segment:Dropdown(name, opts, cb)
 
         if #options == 0 then
             lbl("(empty)", C.muted, 12, Enum.Font.Gotham, scroll, {
-                Size = UDim2.new(1,0,0,IH), ZIndex = 52,
-                TextXAlignment = Enum.TextXAlignment.Center,
+                Size=UDim2.new(1,0,0,IH), ZIndex=52,
+                TextXAlignment=Enum.TextXAlignment.Center,
             })
         end
     end)
@@ -1030,8 +1020,7 @@ function Segment:Dropdown(name, opts, cb)
 
     if not multi and not el._value then
         local o = getOptions()
-        el._value = o[1]
-        ddLbl.Text = displayText()
+        el._value = o[1]; ddLbl.Text = displayText()
     end
 
     el._instance = ddBtn
@@ -1039,15 +1028,18 @@ function Segment:Dropdown(name, opts, cb)
 end
 
 function Segment:MultiDropdown(name, opts, cb)
-    opts = opts or {}; opts.Multi = true
+    opts=opts or {}; opts.Multi=true
     return self:Dropdown(name, opts, cb)
 end
 
 -- =============================================================================
---  COLOR PICKER  — gradient SV box, GetMouseLocation() for correct Vector2 math
+--  COLOR PICKER
+--  SV box uses stacked UIGradient frames (no asset IDs for base).
+--  A transparent catch button sits on top of all overlays so InputBegan fires
+--  reliably regardless of which child element is under the cursor.
 -- =============================================================================
 function Segment:ColorPicker(name, opts, cb)
-    if type(opts) == "function" then cb=opts; opts={} end
+    if type(opts)=="function" then cb=opts; opts={} end
     opts = opts or {}
     local desc    = opts.Description or ""
     local default = opts.Default or C.accent
@@ -1059,9 +1051,9 @@ function Segment:ColorPicker(name, opts, cb)
     eNames(row, name, desc, h)
 
     local swatch = mk("TextButton", {
-        Size = UDim2.new(0,32,0,20), Position = UDim2.new(1,-32-ERPAD,0.5,-10),
-        BackgroundColor3 = default, Text = "",
-        BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 8,
+        Size=UDim2.new(0,32,0,20), Position=UDim2.new(1,-32-ERPAD,0.5,-10),
+        BackgroundColor3=default, Text="",
+        BorderSizePixel=0, AutoButtonColor=false, ZIndex=8,
     }, row)
     rnd(swatch, 5); bdr(swatch, C.border, 1)
 
@@ -1075,7 +1067,7 @@ function Segment:ColorPicker(name, opts, cb)
     end
 
     local function closePicker()
-        if pickerFr then pickerFr:Destroy(); pickerFr = nil end
+        if pickerFr then pickerFr:Destroy(); pickerFr=nil end
         pickerOpen = false
     end
 
@@ -1089,119 +1081,120 @@ function Segment:ColorPicker(name, opts, cb)
         if py + 234 > vp.Y then py = ap.Y - 234 - 6 end
 
         pickerFr = mk("Frame", {
-            Size = UDim2.new(0,PW,0,234),
-            Position = UDim2.new(0,px,0,py),
-            BackgroundColor3 = C.card, BorderSizePixel = 0, ZIndex = 60,
+            Size=UDim2.new(0,PW,0,234), Position=UDim2.new(0,px,0,py),
+            BackgroundColor3=C.card, BorderSizePixel=0, ZIndex=60,
         }, self._win._gui)
         rnd(pickerFr, 10); bdr(pickerFr, C.border, 1)
         pad(pickerFr, 10,10,10,10)
 
-        -- SV box: base = pure hue, overlaid with white (left) and black (bottom) gradients
+        -- SV box: base hue, white overlay (h-grad), black overlay (v-grad)
         local svBox = mk("Frame", {
-            Size = UDim2.new(0,SV,0,SV),
-            BackgroundColor3 = Color3.fromHSV(h_h,1,1),
-            BorderSizePixel = 0, ZIndex = 61,
+            Size=UDim2.new(0,SV,0,SV),
+            BackgroundColor3=Color3.fromHSV(h_h,1,1),
+            BorderSizePixel=0, ZIndex=61,
         }, pickerFr)
         rnd(svBox, 4)
 
         local whiteOv = mk("Frame", {
-            Size = UDim2.new(1,0,1,0), BackgroundColor3 = Color3.new(1,1,1),
-            BorderSizePixel = 0, ZIndex = 62,
+            Size=UDim2.new(1,0,1,0), BackgroundColor3=Color3.new(1,1,1),
+            BorderSizePixel=0, ZIndex=62,
         }, svBox)
         rnd(whiteOv, 4)
-        mk("UIGradient", {
-            Color = ColorSequence.new(Color3.new(1,1,1), Color3.new(1,1,1)),
-            Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0,0),
-                NumberSequenceKeypoint.new(1,1),
-            }),
-            Rotation = 0,
+        mk("UIGradient",{
+            Color=ColorSequence.new(Color3.new(1,1,1),Color3.new(1,1,1)),
+            Transparency=NumberSequence.new({
+                NumberSequenceKeypoint.new(0,0), NumberSequenceKeypoint.new(1,1),
+            }), Rotation=0,
         }, whiteOv)
 
         local blackOv = mk("Frame", {
-            Size = UDim2.new(1,0,1,0), BackgroundColor3 = Color3.new(0,0,0),
-            BorderSizePixel = 0, ZIndex = 63,
+            Size=UDim2.new(1,0,1,0), BackgroundColor3=Color3.new(0,0,0),
+            BorderSizePixel=0, ZIndex=63,
         }, svBox)
         rnd(blackOv, 4)
-        mk("UIGradient", {
-            Color = ColorSequence.new(Color3.new(0,0,0), Color3.new(0,0,0)),
-            Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0,1),
-                NumberSequenceKeypoint.new(1,0),
-            }),
-            Rotation = 90,
+        mk("UIGradient",{
+            Color=ColorSequence.new(Color3.new(0,0,0),Color3.new(0,0,0)),
+            Transparency=NumberSequence.new({
+                NumberSequenceKeypoint.new(0,1), NumberSequenceKeypoint.new(1,0),
+            }), Rotation=90,
         }, blackOv)
 
         local svThumb = mk("Frame", {
-            Size = UDim2.new(0,10,0,10), AnchorPoint = Vector2.new(.5,.5),
-            Position = UDim2.new(s_h,0,1-v_h,0),
-            BackgroundColor3 = C.white, BorderSizePixel = 0, ZIndex = 65,
+            Size=UDim2.new(0,10,0,10), AnchorPoint=Vector2.new(.5,.5),
+            Position=UDim2.new(s_h,0,1-v_h,0),
+            BackgroundColor3=C.white, BorderSizePixel=0, ZIndex=65,
         }, svBox)
         rnd(svThumb, 99); bdr(svThumb, C.black, 1.5)
 
+        -- Transparent catch layer on top of ALL SV children so InputBegan fires here.
+        -- This fixes the issue where clicks on overlay frames would be swallowed,
+        -- causing the picker to read stale AbsolutePosition from the wrong element.
+        local svCatch = mk("TextButton", {
+            Size=UDim2.new(1,0,1,0), BackgroundTransparency=1,
+            Text="", ZIndex=67, BorderSizePixel=0, AutoButtonColor=false,
+        }, svBox)
+
         -- Hue bar
         local hBar = mk("ImageLabel", {
-            Size = UDim2.new(0,SV,0,12),
-            Position = UDim2.new(0,0,0,SV+8),
-            Image = "rbxassetid://698052001",
-            BackgroundTransparency = 1, ZIndex = 61,
+            Size=UDim2.new(0,SV,0,12), Position=UDim2.new(0,0,0,SV+8),
+            Image="rbxassetid://698052001",
+            BackgroundTransparency=1, ZIndex=61,
         }, pickerFr)
         rnd(hBar, 4)
-
         local hThumb = mk("Frame", {
-            Size = UDim2.new(0,4,0,12), AnchorPoint = Vector2.new(.5,0),
-            Position = UDim2.new(h_h,0,0,0),
-            BackgroundColor3 = C.white, BorderSizePixel = 0, ZIndex = 62,
+            Size=UDim2.new(0,4,0,12), AnchorPoint=Vector2.new(.5,0),
+            Position=UDim2.new(h_h,0,0,0),
+            BackgroundColor3=C.white, BorderSizePixel=0, ZIndex=62,
         }, hBar)
         rnd(hThumb, 3); bdr(hThumb, C.border, 1)
+        local hueCatch = mk("TextButton", {
+            Size=UDim2.new(1,0,1,0), BackgroundTransparency=1,
+            Text="", ZIndex=63, BorderSizePixel=0, AutoButtonColor=false,
+        }, hBar)
 
         -- Hex input
         local hexBg = mk("Frame", {
-            Size = UDim2.new(0,SV,0,22),
-            Position = UDim2.new(0,0,0,SV+26),
-            BackgroundColor3 = C.card2, BorderSizePixel = 0, ZIndex = 61,
+            Size=UDim2.new(0,SV,0,22), Position=UDim2.new(0,0,0,SV+26),
+            BackgroundColor3=C.card2, BorderSizePixel=0, ZIndex=61,
         }, pickerFr)
         rnd(hexBg, 5)
         local hexSt = bdr(hexBg, C.border, 1)
         pad(hexBg, 0,6,0,6)
         local hexBox = mk("TextBox", {
-            Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1,
-            Text = toHex(el._value), TextColor3 = C.text,
-            Font = Enum.Font.Code, TextSize = 11,
-            ClearTextOnFocus = false, ZIndex = 62,
+            Size=UDim2.new(1,0,1,0), BackgroundTransparency=1,
+            Text=toHex(el._value), TextColor3=C.text,
+            Font=Enum.Font.Code, TextSize=11,  -- Code only here for monospace hex
+            ClearTextOnFocus=false, ZIndex=62,
         }, hexBg)
 
         local function apply(nh, ns, nv)
             h_h,s_h,v_h = nh,ns,nv
             local col = Color3.fromHSV(nh,ns,nv)
-            el._value = col; swatch.BackgroundColor3 = col
-            svBox.BackgroundColor3 = Color3.fromHSV(nh,1,1)
-            svThumb.Position = UDim2.new(ns,0,1-nv,0)
-            hThumb.Position  = UDim2.new(nh,0,0,0)
-            hexBox.Text = toHex(col)
+            el._value=col; swatch.BackgroundColor3=col
+            svBox.BackgroundColor3=Color3.fromHSV(nh,1,1)
+            svThumb.Position=UDim2.new(ns,0,1-nv,0)
+            hThumb.Position=UDim2.new(nh,0,0,0)
+            hexBox.Text=toHex(col)
             if cb then task.spawn(cb,col) end
         end
 
-        hexBox.Focused:Connect(function() hexSt.Color = C.accent end)
+        hexBox.Focused:Connect(function() hexSt.Color=C.accent end)
         hexBox.FocusLost:Connect(function()
-            hexSt.Color = C.border
-            local tx = hexBox.Text:gsub("#","")
-            if #tx == 6 then
-                local r = tonumber(tx:sub(1,2),16)
-                local g = tonumber(tx:sub(3,4),16)
-                local b = tonumber(tx:sub(5,6),16)
-                if r and g and b then
-                    local col = Color3.fromRGB(r,g,b)
-                    apply(Color3.toHSV(col))
-                end
+            hexSt.Color=C.border
+            local tx=hexBox.Text:gsub("#","")
+            if #tx==6 then
+                local r=tonumber(tx:sub(1,2),16)
+                local g=tonumber(tx:sub(3,4),16)
+                local b=tonumber(tx:sub(5,6),16)
+                if r and g and b then apply(Color3.toHSV(Color3.fromRGB(r,g,b))) end
             end
         end)
 
-        -- SV drag: use UIS:GetMouseLocation() which returns Vector2 (avoids Vector3 mismatch)
+        -- SV drag via the catch button (guarantees InputBegan always fires here)
         local svD = false
-        svBox.InputBegan:Connect(function(i)
+        svCatch.InputBegan:Connect(function(i)
             if i.UserInputType~=Enum.UserInputType.MouseButton1 then return end
-            svD = true
+            svD=true
             local mp  = UIS:GetMouseLocation()
             local rel = mp - svBox.AbsolutePosition
             apply(h_h, math.clamp(rel.X/SV,0,1), 1-math.clamp(rel.Y/SV,0,1))
@@ -1217,35 +1210,33 @@ function Segment:ColorPicker(name, opts, cb)
             end
         end)
 
-        -- Hue drag
+        -- Hue drag via catch button
         local hD = false
-        hBar.InputBegan:Connect(function(i)
+        hueCatch.InputBegan:Connect(function(i)
             if i.UserInputType~=Enum.UserInputType.MouseButton1 then return end
-            hD = true
-            local mp = UIS:GetMouseLocation()
-            apply(math.clamp((mp.X-hBar.AbsolutePosition.X)/hBar.AbsoluteSize.X,0,1), s_h, v_h)
+            hD=true
+            local mp=UIS:GetMouseLocation()
+            apply(math.clamp((mp.X-hBar.AbsolutePosition.X)/hBar.AbsoluteSize.X,0,1),s_h,v_h)
         end)
         UIS.InputEnded:Connect(function(i)
             if i.UserInputType==Enum.UserInputType.MouseButton1 then hD=false end
         end)
         UIS.InputChanged:Connect(function(i)
             if hD and i.UserInputType==Enum.UserInputType.MouseMovement then
-                local mp = UIS:GetMouseLocation()
-                apply(math.clamp((mp.X-hBar.AbsolutePosition.X)/hBar.AbsoluteSize.X,0,1), s_h, v_h)
+                local mp=UIS:GetMouseLocation()
+                apply(math.clamp((mp.X-hBar.AbsolutePosition.X)/hBar.AbsoluteSize.X,0,1),s_h,v_h)
             end
         end)
 
-        -- Outside click closes picker (swatch excluded so toggle works)
+        -- Outside click (swatch excluded so toggle works cleanly)
         local outsideConn
         outsideConn = UIS.InputBegan:Connect(function(i)
             if i.UserInputType~=Enum.UserInputType.MouseButton1 then return end
             if not pickerFr then outsideConn:Disconnect(); return end
-            local mp = UIS:GetMouseLocation()
-            local pa = pickerFr.AbsolutePosition
-            local ps = pickerFr.AbsoluteSize
+            local mp=UIS:GetMouseLocation()
+            local pa=pickerFr.AbsolutePosition; local ps=pickerFr.AbsoluteSize
             if mp.X>=pa.X and mp.X<=pa.X+ps.X and mp.Y>=pa.Y and mp.Y<=pa.Y+ps.Y then return end
-            local sa = swatch.AbsolutePosition
-            local ss = swatch.AbsoluteSize
+            local sa=swatch.AbsolutePosition; local ss=swatch.AbsoluteSize
             if mp.X>=sa.X and mp.X<=sa.X+ss.X and mp.Y>=sa.Y and mp.Y<=sa.Y+ss.Y then return end
             closePicker(); outsideConn:Disconnect()
         end)
@@ -1254,7 +1245,6 @@ function Segment:ColorPicker(name, opts, cb)
     swatch.MouseButton1Click:Connect(function()
         if pickerOpen then closePicker() else pickerOpen=true; buildPicker() end
     end)
-
     el._instance = swatch
     return el
 end
@@ -1264,15 +1254,15 @@ end
 -- =============================================================================
 function Segment:Label(text, color)
     lbl(text, color or C.muted, 12, Enum.Font.Gotham, self._content, {
-        Size = UDim2.new(1,0,0,18), ZIndex = 7, TextWrapped = true,
+        Size=UDim2.new(1,0,0,18), ZIndex=7, TextWrapped=true,
     })
 end
 
 function Segment:Uptime()
-    local disp = lbl("Session: 0:00:00", C.muted, 12, Enum.Font.Code, self._content, {
-        Size = UDim2.new(1,0,0,18), ZIndex = 7,
+    local disp = lbl("Session: 0:00:00", C.muted, 12, Enum.Font.Gotham, self._content, {
+        Size=UDim2.new(1,0,0,18), ZIndex=7,
     })
-    table.insert(self._win._uptimeFns, function(str) disp.Text = str end)
+    table.insert(self._win._uptimeFns, function(str) disp.Text=str end)
     return disp
 end
 
@@ -1286,46 +1276,43 @@ function UI:SettingsTab()
     local ui = tab:Segment("Interface")
 
     local tkEl = ui:Input("Toggle Key", {
-        Placeholder = win._uiKey.Name, Default = win._uiKey.Name,
-        Description = "Key to show / hide the UI",
+        Placeholder=win._uiKey.Name, Default=win._uiKey.Name,
+        Description="Key to show / hide the UI",
     })
-    ui:Button("Rebind Toggle Key", { Label = "Rebind" }, function()
-        tkEl._instance.Text = "Press key..."
-        tkEl._instance.TextColor3 = C.yellow
-        local c; c = UIS.InputBegan:Connect(function(i)
-            if i.UserInputType ~= Enum.UserInputType.Keyboard then return end
-            win._uiKey = i.KeyCode
-            tkEl._instance.Text = i.KeyCode.Name
-            tkEl._instance.TextColor3 = C.text
+    ui:Button("Rebind Toggle Key", {Label="Rebind"}, function()
+        tkEl._instance.Text="Press key..."; tkEl._instance.TextColor3=C.yellow
+        local c; c=UIS.InputBegan:Connect(function(i)
+            if i.UserInputType~=Enum.UserInputType.Keyboard then return end
+            win._uiKey=i.KeyCode
+            tkEl._instance.Text=i.KeyCode.Name
+            tkEl._instance.TextColor3=C.text
             c:Disconnect()
         end)
     end)
 
     local pkEl = ui:Input("Panic Key", {
-        Placeholder = win._panicKey.Name, Default = win._panicKey.Name,
-        Description = "Instantly destroys the UI",
+        Placeholder=win._panicKey.Name, Default=win._panicKey.Name,
+        Description="Instantly destroys the UI",
     })
-    ui:Button("Rebind Panic Key", { Label = "Rebind" }, function()
-        pkEl._instance.Text = "Press key..."
-        pkEl._instance.TextColor3 = C.yellow
-        local c; c = UIS.InputBegan:Connect(function(i)
-            if i.UserInputType ~= Enum.UserInputType.Keyboard then return end
-            win._panicKey = i.KeyCode
-            pkEl._instance.Text = i.KeyCode.Name
-            pkEl._instance.TextColor3 = C.text
+    ui:Button("Rebind Panic Key", {Label="Rebind"}, function()
+        pkEl._instance.Text="Press key..."; pkEl._instance.TextColor3=C.yellow
+        local c; c=UIS.InputBegan:Connect(function(i)
+            if i.UserInputType~=Enum.UserInputType.Keyboard then return end
+            win._panicKey=i.KeyCode
+            pkEl._instance.Text=i.KeyCode.Name
+            pkEl._instance.TextColor3=C.text
             c:Disconnect()
         end)
     end)
 
     ui:Toggle("Clamp UI to Screen", {
-        Default = win._clamp,
-        Description = "Prevents dragging off-screen",
-    }, function(v) win._clamp = v end)
+        Default=win._clamp, Description="Prevents dragging off-screen",
+    }, function(v) win._clamp=v end)
 
     local misc = tab:Segment("Session")
     misc:Uptime()
     misc:Button("Unload Veltrix", {
-        Label = "Unload", Description = "Destroys the UI and stops all connections",
+        Label="Unload", Description="Destroys the UI and stops all connections",
     }, function() win:_destroy() end)
 
     return tab
@@ -1345,22 +1332,22 @@ function UI:ConfigTab()
 
     local function listCfgs()
         if not listfiles then return {"(none)"} end
-        local out = {}
+        local out={}
         for _, f in ipairs(listfiles(DIR) or {}) do
-            local n = tostring(f):match("([^/\\]+)%.json$")
-            if n then table.insert(out, n) end
+            local n=tostring(f):match("([^/\\]+)%.json$")
+            if n then table.insert(out,n) end
         end
-        return #out > 0 and out or {"(none)"}
+        return #out>0 and out or {"(none)"}
     end
 
     local function serialize()
-        local d = {}
+        local d={}
         for _, el in ipairs(self._elements) do
-            if el._name and el._value ~= nil then
-                if typeof(el._value) == "Color3" then
-                    d[el._name] = {r=el._value.R, g=el._value.G, b=el._value.B}
+            if el._name and el._value~=nil then
+                if typeof(el._value)=="Color3" then
+                    d[el._name]={r=el._value.R, g=el._value.G, b=el._value.B}
                 else
-                    d[el._name] = el._value
+                    d[el._name]=el._value
                 end
             end
         end
@@ -1369,42 +1356,42 @@ function UI:ConfigTab()
 
     local function applyData(d)
         for _, el in ipairs(self._elements) do
-            local v = d[el._name]; if v == nil then continue end
-            if el._type == "Toggle" and el._setValue then
-                el._setValue(v == true, true)
-            elseif el._type == "Slider" and el._setValue then
-                local mn, mx = el._min or 0, el._max or 100
-                el._setValue(math.clamp((v-mn)/(mx-mn), 0, 1))
-            elseif el._type == "Input" and el._instance then
-                el._instance.Text = tostring(v); el._value = v
-            elseif el._type == "Dropdown" or el._type == "MultiDropdown" then
-                el._value = v
-            elseif el._type == "ColorPicker" and el._instance and type(v) == "table" then
-                local col = Color3.new(v.r or 1, v.g or 1, v.b or 1)
-                el._value = col; el._instance.BackgroundColor3 = col
+            local v=d[el._name]; if v==nil then continue end
+            if el._type=="Toggle" and el._setValue then
+                el._setValue(v==true, true)
+            elseif el._type=="Slider" and el._setValue then
+                local mn,mx=el._min or 0,el._max or 100
+                el._setValue(math.clamp((v-mn)/(mx-mn),0,1))
+            elseif el._type=="Input" and el._instance then
+                el._instance.Text=tostring(v); el._value=v
+            elseif el._type=="Dropdown" or el._type=="MultiDropdown" then
+                el._value=v
+            elseif el._type=="ColorPicker" and el._instance and type(v)=="table" then
+                local col=Color3.new(v.r or 1,v.g or 1,v.b or 1)
+                el._value=col; el._instance.BackgroundColor3=col
             end
         end
     end
 
-    local nameEl = seg:Input("Config Name", { Placeholder = "my_config", Default = "default" })
-    local selEl  = seg:Dropdown("Select Config", { Options = listCfgs() })
+    local nameEl = seg:Input("Config Name", {Placeholder="my_config", Default="default"})
+    local selEl  = seg:Dropdown("Select Config", {Options=listCfgs()})
 
-    seg:Button("Save Config", { Label = "Save" }, function()
-        local n = (nameEl._value ~= "" and nameEl._value or "default"):gsub("[^%w_%-]","_")
+    seg:Button("Save Config", {Label="Save"}, function()
+        local n=(nameEl._value~="" and nameEl._value or "default"):gsub("[^%w_%-]","_")
         if writefile then pcall(writefile, DIR..n..".json", serialize()) end
         selEl:SetOptions(listCfgs())
     end)
-    seg:Button("Load Config", { Label = "Load" }, function()
-        local n = selEl._value
-        if not n or n == "(none)" or not readfile then return end
-        local ok, raw = pcall(readfile, DIR..n..".json")
+    seg:Button("Load Config", {Label="Load"}, function()
+        local n=selEl._value
+        if not n or n=="(none)" or not readfile then return end
+        local ok,raw=pcall(readfile, DIR..n..".json")
         if not ok then return end
-        local ok2, d = pcall(Http.JSONDecode, Http, raw)
+        local ok2,d=pcall(Http.JSONDecode,Http,raw)
         if ok2 and d then applyData(d) end
     end)
-    seg:Button("Delete Config", { Label = "Delete" }, function()
-        local n = selEl._value
-        if n and n ~= "(none)" and delfile then
+    seg:Button("Delete Config", {Label="Delete"}, function()
+        local n=selEl._value
+        if n and n~="(none)" and delfile then
             pcall(delfile, DIR..n..".json")
             selEl:SetOptions(listCfgs())
         end
