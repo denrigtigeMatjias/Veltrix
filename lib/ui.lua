@@ -363,7 +363,7 @@ function UI:Window(opts)
 
     -- Controls
     local function setVis(v)
-        self._visible = v; frame.Visible = v
+        self._visible = v; wrapper.Visible = v
     end
 
     -- No gp check on keyboard so modifier keys like RightShift work as toggle.
@@ -542,6 +542,16 @@ local function eNames(row, name, desc, h)
     end
 end
 
+-- Returns the top-Y pixel offset so a widget of `widgetH` height visually aligns
+-- with the name+desc text block on the left side of the element row.
+local function widgetY(h, widgetH)
+    if h <= EH + 2 then
+        return math.floor((h - widgetH) / 2)   -- vertically centred in simple row
+    end
+    -- desc row: name at y=4 h=17, desc at y=22 h=13 → content centre ≈ y=19.5
+    return math.max(4, math.floor(19.5 - widgetH / 2))
+end
+
 local function regEl(seg, name, desc, etype)
     local el = { _name=name, _desc=desc or "", _type=etype,
                  _tabName=seg._tab._name, _segName=seg._name }
@@ -563,7 +573,7 @@ function Segment:Button(name, opts, cb)
 
     local W = 80
     local btn = mk("TextButton", {
-        Size = UDim2.new(0,W,0,24), Position = UDim2.new(1,-W-ERPAD,0.5,-12),
+        Size = UDim2.new(0,W,0,24), Position = UDim2.new(1,-W-ERPAD, 0, widgetY(h,24)),
         BackgroundColor3 = C.accent,
         Text = opts.Label or "Run", TextColor3 = C.white,
         Font = Enum.Font.GothamBold, TextSize = 12,
@@ -597,7 +607,7 @@ function Segment:HoldButton(name, opts, cb)
     local W = 80
     -- Outer container (acts as button background)
     local btnFrame = mk("Frame", {
-        Size = UDim2.new(0,W,0,24), Position = UDim2.new(1,-W-ERPAD,0.5,-12),
+        Size = UDim2.new(0,W,0,24), Position = UDim2.new(1,-W-ERPAD, 0, widgetY(h,24)),
         BackgroundColor3 = C.card2, BorderSizePixel = 0, ZIndex = 8,
         ClipsDescendants = true,
     }, row)
@@ -605,7 +615,7 @@ function Segment:HoldButton(name, opts, cb)
 
     -- Fill that grows left-to-right behind the text
     local fill = mk("Frame", {
-        Size = UDim2.new(0,0,1,0), BackgroundColor3 = C.green,
+        Size = UDim2.new(0,0,1,0), BackgroundColor3 = C.blue,
         BorderSizePixel = 0, ZIndex = 8,
     }, btnFrame)
 
@@ -665,7 +675,7 @@ function Segment:Toggle(name, opts, cb)
     local PW, PH = 36, 20
     local pillOff = bindable and (PW + 44 + ERPAD) or (PW + ERPAD)
     local pill = mk("Frame", {
-        Size = UDim2.new(0,PW,0,PH), Position = UDim2.new(1,-pillOff,0.5,-PH/2),
+        Size = UDim2.new(0,PW,0,PH), Position = UDim2.new(1,-pillOff, 0, widgetY(h,PH)),
         BackgroundColor3 = default and C.accent or C.border, BorderSizePixel=0, ZIndex=8,
     }, row)
     rnd(pill, 99)
@@ -694,7 +704,7 @@ function Segment:Toggle(name, opts, cb)
         local boundKey = nil
         local bBtn = mk("TextButton", {
             Size = UDim2.new(0,40,0,18),
-            Position = UDim2.new(1,-pillOff+PW+6,0.5,-9),
+            Position = UDim2.new(1,-pillOff+PW+6, 0, widgetY(h,18)),
             BackgroundColor3 = C.card2,
             Text = "none", TextColor3 = C.muted,
             Font = Enum.Font.Gotham, TextSize = 10,
@@ -1051,7 +1061,7 @@ function Segment:ColorPicker(name, opts, cb)
     eNames(row, name, desc, h)
 
     local swatch = mk("TextButton", {
-        Size=UDim2.new(0,32,0,20), Position=UDim2.new(1,-32-ERPAD,0.5,-10),
+        Size=UDim2.new(0,32,0,20), Position=UDim2.new(1,-32-ERPAD, 0, widgetY(h,20)),
         BackgroundColor3=default, Text="",
         BorderSizePixel=0, AutoButtonColor=false, ZIndex=8,
     }, row)
