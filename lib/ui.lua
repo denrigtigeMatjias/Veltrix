@@ -170,6 +170,7 @@ function UI:Window(opts)
     local wrapper = mk("Frame", {
         Size = normSz, Position = normPos,
         BackgroundColor3 = C.border, BorderSizePixel = 0, ZIndex = 2,
+        ClipsDescendants = true,
     }, gui)
     rnd(wrapper, 13)
     self._wrapper = wrapper
@@ -531,25 +532,16 @@ local function eRow(parent, h)
 end
 
 local function eNames(row, name, desc, h)
-    local ny = desc ~= "" and 4 or math.floor(h/2)-8
+    local blockH = desc ~= "" and 32 or 17
+    local ny = math.floor((h - blockH) / 2)
     lbl(name, C.text, 13, Enum.Font.Gotham, row, {
         Size = UDim2.new(LBLW,0,0,17), Position = UDim2.new(0,0,0,ny), ZIndex=8,
     })
     if desc ~= "" then
         lbl(desc, C.muted, 10, Enum.Font.Gotham, row, {
-            Size = UDim2.new(LBLW,0,0,13), Position = UDim2.new(0,0,0,22), ZIndex=8,
+            Size = UDim2.new(LBLW,0,0,13), Position = UDim2.new(0,0,0,ny+19), ZIndex=8,
         })
     end
-end
-
--- Returns the top-Y pixel offset so a widget of `widgetH` height visually aligns
--- with the name+desc text block on the left side of the element row.
-local function widgetY(h, widgetH)
-    if h <= EH + 2 then
-        return math.floor((h - widgetH) / 2)   -- vertically centred in simple row
-    end
-    -- desc row: name at y=4 h=17, desc at y=22 h=13 → content centre ≈ y=19.5
-    return math.max(4, math.floor(19.5 - widgetH / 2))
 end
 
 local function regEl(seg, name, desc, etype)
@@ -573,7 +565,7 @@ function Segment:Button(name, opts, cb)
 
     local W = 80
     local btn = mk("TextButton", {
-        Size = UDim2.new(0,W,0,24), Position = UDim2.new(1,-W-ERPAD, 0, widgetY(h,24)),
+        Size = UDim2.new(0,W,0,24), Position = UDim2.new(1,-W-ERPAD, 0.5, -12),
         BackgroundColor3 = C.accent,
         Text = opts.Label or "Run", TextColor3 = C.white,
         Font = Enum.Font.GothamBold, TextSize = 12,
@@ -607,7 +599,7 @@ function Segment:HoldButton(name, opts, cb)
     local W = 80
     -- Outer container (acts as button background)
     local btnFrame = mk("Frame", {
-        Size = UDim2.new(0,W,0,24), Position = UDim2.new(1,-W-ERPAD, 0, widgetY(h,24)),
+        Size = UDim2.new(0,W,0,24), Position = UDim2.new(1,-W-ERPAD, 0.5, -12),
         BackgroundColor3 = C.card2, BorderSizePixel = 0, ZIndex = 8,
         ClipsDescendants = true,
     }, row)
@@ -615,9 +607,10 @@ function Segment:HoldButton(name, opts, cb)
 
     -- Fill that grows left-to-right behind the text
     local fill = mk("Frame", {
-        Size = UDim2.new(0,0,1,0), BackgroundColor3 = C.blue,
-        BorderSizePixel = 0, ZIndex = 8,
+        Size = UDim2.new(0,6,1,0), Position = UDim2.new(0,-6,0,0),
+        BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 8,
     }, btnFrame)
+    rnd(fill, 6)
 
     -- Text label always on top of the fill
     local textLbl = lbl("Hold", C.sub, 12, Enum.Font.GothamBold, btnFrame, {
@@ -638,11 +631,11 @@ function Segment:HoldButton(name, opts, cb)
         hConn = Run.Heartbeat:Connect(function()
             if not held then hConn:Disconnect(); return end
             local p = math.min((tick()-t0)/holdTime, 1)
-            fill.Size = UDim2.new(p,0,1,0)
+            fill.Size = UDim2.new(p,6,1,0)
             if p >= 1 then
                 held=false; hConn:Disconnect()
                 textLbl.TextColor3 = C.sub
-                tw(fill,{Size=UDim2.new(0,0,1,0)},.15)
+                tw(fill,{Size=UDim2.new(0,6,1,0)},.15)
                 if cb then task.spawn(cb) end
             end
         end)
@@ -650,7 +643,7 @@ function Segment:HoldButton(name, opts, cb)
     clickBtn.InputEnded:Connect(function(i)
         if i.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
         held=false; textLbl.TextColor3 = C.sub
-        tw(fill,{Size=UDim2.new(0,0,1,0)},.15)
+        tw(fill,{Size=UDim2.new(0,6,1,0)},.15)
     end)
     el._instance = btnFrame
     return el
@@ -675,7 +668,7 @@ function Segment:Toggle(name, opts, cb)
     local PW, PH = 36, 20
     local pillOff = bindable and (PW + 44 + ERPAD) or (PW + ERPAD)
     local pill = mk("Frame", {
-        Size = UDim2.new(0,PW,0,PH), Position = UDim2.new(1,-pillOff, 0, widgetY(h,PH)),
+        Size = UDim2.new(0,PW,0,PH), Position = UDim2.new(1,-pillOff, 0.5, -PH/2),
         BackgroundColor3 = default and C.accent or C.border, BorderSizePixel=0, ZIndex=8,
     }, row)
     rnd(pill, 99)
@@ -704,7 +697,7 @@ function Segment:Toggle(name, opts, cb)
         local boundKey = nil
         local bBtn = mk("TextButton", {
             Size = UDim2.new(0,40,0,18),
-            Position = UDim2.new(1,-pillOff+PW+6, 0, widgetY(h,18)),
+            Position = UDim2.new(1,-pillOff+PW+6, 0.5, -9),
             BackgroundColor3 = C.card2,
             Text = "none", TextColor3 = C.muted,
             Font = Enum.Font.Gotham, TextSize = 10,
@@ -1061,7 +1054,7 @@ function Segment:ColorPicker(name, opts, cb)
     eNames(row, name, desc, h)
 
     local swatch = mk("TextButton", {
-        Size=UDim2.new(0,32,0,20), Position=UDim2.new(1,-32-ERPAD, 0, widgetY(h,20)),
+        Size=UDim2.new(0,32,0,20), Position=UDim2.new(1,-32-ERPAD, 0.5, -10),
         BackgroundColor3=default, Text="",
         BorderSizePixel=0, AutoButtonColor=false, ZIndex=8,
     }, row)
@@ -1205,7 +1198,7 @@ function Segment:ColorPicker(name, opts, cb)
         svCatch.InputBegan:Connect(function(i)
             if i.UserInputType~=Enum.UserInputType.MouseButton1 then return end
             svD=true
-            local mp  = UIS:GetMouseLocation()
+            local mp  = Vector2.new(i.Position.X, i.Position.Y)
             local rel = mp - svBox.AbsolutePosition
             apply(h_h, math.clamp(rel.X/SV,0,1), 1-math.clamp(rel.Y/SV,0,1))
         end)
@@ -1214,7 +1207,7 @@ function Segment:ColorPicker(name, opts, cb)
         end)
         UIS.InputChanged:Connect(function(i)
             if svD and i.UserInputType==Enum.UserInputType.MouseMovement then
-                local mp  = UIS:GetMouseLocation()
+                local mp  = Vector2.new(i.Position.X, i.Position.Y)
                 local rel = mp - svBox.AbsolutePosition
                 apply(h_h, math.clamp(rel.X/SV,0,1), 1-math.clamp(rel.Y/SV,0,1))
             end
@@ -1225,7 +1218,7 @@ function Segment:ColorPicker(name, opts, cb)
         hueCatch.InputBegan:Connect(function(i)
             if i.UserInputType~=Enum.UserInputType.MouseButton1 then return end
             hD=true
-            local mp=UIS:GetMouseLocation()
+            local mp=Vector2.new(i.Position.X, i.Position.Y)
             apply(math.clamp((mp.X-hBar.AbsolutePosition.X)/hBar.AbsoluteSize.X,0,1),s_h,v_h)
         end)
         UIS.InputEnded:Connect(function(i)
@@ -1233,7 +1226,7 @@ function Segment:ColorPicker(name, opts, cb)
         end)
         UIS.InputChanged:Connect(function(i)
             if hD and i.UserInputType==Enum.UserInputType.MouseMovement then
-                local mp=UIS:GetMouseLocation()
+                local mp=Vector2.new(i.Position.X, i.Position.Y)
                 apply(math.clamp((mp.X-hBar.AbsolutePosition.X)/hBar.AbsoluteSize.X,0,1),s_h,v_h)
             end
         end)
