@@ -124,10 +124,11 @@ local function makeDraggable(target, handle, canDrag, shouldClamp)
         local nx = sf.X + d.X
         local ny = sf.Y + d.Y
         if shouldClamp and shouldClamp() then
-            local vp = workspace.CurrentCamera.ViewportSize
-            local fs = target.AbsoluteSize
+            local vp    = workspace.CurrentCamera.ViewportSize
+            local inset = game:GetService("GuiService"):GetGuiInset()
+            local fs    = target.AbsoluteSize
             nx = math.clamp(nx, 0, math.max(0, vp.X - fs.X))
-            ny = math.clamp(ny, 0, math.max(0, vp.Y - fs.Y))
+            ny = math.clamp(ny, 0, math.max(0, vp.Y - inset.Y - fs.Y))
         end
         target.Position = UDim2.new(0, nx, 0, ny)
     end)
@@ -393,9 +394,12 @@ function UI:Window(opts)
             self._preFS_pos = wrapper.Position
             local vp    = workspace.CurrentCamera.ViewportSize
             local inset = game:GetService("GuiService"):GetGuiInset()
-            wrapper.Size     = UDim2.new(0, vp.X, 0, vp.Y - inset.Y)
-            wrapper.Position = UDim2.new(0, 0, 0, 0)
-            -- Remove rounding so the UI reaches every edge with no gap
+            -- The inner frame is 1 px inset from wrapper on every side (the border).
+            -- Grow the wrapper by 2 px and shift it -1 px so the inner frame lands
+            -- flush with every screen edge — no border strip visible.
+            wrapper.Size     = UDim2.new(0, vp.X + 2, 0, vp.Y - inset.Y + 2)
+            wrapper.Position = UDim2.new(0, -1, 0, -1)
+            -- Zero out rounding so the corners reach the screen edges
             if wc then wc.CornerRadius = UDim.new(0, 0) end
             enlargeBtn.Text  = "-"
             if self._resizeBtn then self._resizeBtn.Visible = false end
