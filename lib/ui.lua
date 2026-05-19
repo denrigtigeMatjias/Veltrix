@@ -139,16 +139,19 @@ local Segment = {}; Segment.__index = Segment
 function UI:Window(opts)
     opts = opts or {}
     local self = setmetatable({
-        _tabs      = {},
-        _elements  = {},
-        _conns     = {},
-        _visible   = true,
-        _enlarged  = false,
-        _clamp     = opts.ClampScreen ~= false,
-        _uiKey     = opts.ToggleKey or Enum.KeyCode.RightShift,
-        _panicKey  = opts.PanicKey  or Enum.KeyCode.End,
-        _startTime = tick(),
-        _key       = opts.Key or "",
+        _tabs       = {},
+        _elements   = {},
+        _conns      = {},
+        _visible    = true,
+        _enlarged   = false,
+        _clamp      = opts.ClampScreen ~= false,
+        _resizable  = opts.Resizable  ~= false,
+        _uiKey      = opts.ToggleKey or Enum.KeyCode.RightShift,
+        _panicKey   = opts.PanicKey  or Enum.KeyCode.End,
+        _startTime  = tick(),
+        _key        = opts.Key or "",
+        _notifStack = {},
+        _resizeBtn  = nil,
     }, { __index = UI })
 
     for _, v in ipairs(guiParent():GetChildren()) do
@@ -179,11 +182,13 @@ function UI:Window(opts)
     local uiScale = mk("UIScale", {Scale = 1}, wrapper)
     self._uiScale = uiScale
 
+    -- frame has no UICorner: all rounded-corner clipping is delegated to wrapper
+    -- (ClipsDescendants + UICorner r=13). Frame clips its children to a rectangle;
+    -- wrapper then clips the whole lot to the rounded shape. One reliable clip layer.
     local frame = mk("Frame", {
         Size = UDim2.new(1,-2,1,-2), Position = UDim2.new(0,1,0,1),
         BackgroundColor3 = C.bg, BorderSizePixel = 0, ClipsDescendants = true, ZIndex = 2,
     }, wrapper)
-    rnd(frame, 12)
     self._frame = frame
 
     -- Full-width accent line; ClipsDescendants on `frame` rounds its corners naturally.
@@ -364,7 +369,9 @@ function UI:Window(opts)
 
     -- Controls
     local function setVis(v)
-        self._visible = v; wrapper.Visible = v
+        self._visible = v
+        wrapper.Visible = v
+        if self._resizeBtn then self._resizeBtn.Visible = v end
     end
 
     -- No gp check on keyboard so modifier keys like RightShift work as toggle.
@@ -376,21 +383,30 @@ function UI:Window(opts)
     table.insert(self._conns, kc)
 
     -- Fullscreen: scale content via UIScale so layout proportions are preserved.
+    -- ViewportSize includes the Roblox top bar; subtract GuiInset so the UI
+    -- fits within the ScreenGui's usable coordinate space (y=0 is below the bar).
     enlargeBtn.MouseButton1Click:Connect(function()
         self._enlarged = not self._enlarged
         if self._enlarged then
             self._preFS = wrapper.Position
-            local vp = workspace.CurrentCamera.ViewportSize
-            local s  = math.min(vp.X / (WW+2), vp.Y / (WH+2))
+            local vp     = workspace.CurrentCamera.ViewportSize
+            local inset  = game:GetService("GuiService"):GetGuiInset()
+            local availW = vp.X
+            local availH = vp.Y - inset.Y
+            local s      = math.min(availW / (WW+2), availH / (WH+2))
             uiScale.Scale = s
             local sw = math.floor((WW+2)*s + .5)
             local sh = math.floor((WH+2)*s + .5)
-            wrapper.Position = UDim2.new(0, math.floor((vp.X-sw)/2), 0, math.floor((vp.Y-sh)/2))
+            wrapper.Position = UDim2.new(0,
+                math.floor((availW - sw) / 2), 0,
+                math.floor((availH - sh) / 2))
             enlargeBtn.Text = "-"
+            if self._resizeBtn then self._resizeBtn.Visible = false end
         else
             uiScale.Scale = 1
             wrapper.Position = self._preFS or normPos
             enlargeBtn.Text = "+"
+            if self._resizeBtn then self._resizeBtn.Visible = self._visible end
         end
     end)
 
@@ -422,12 +438,178 @@ function UI:Window(opts)
         end
     end)
 
+    -- Resize handle — child of gui (ScreenGui), not wrapper, so ClipsDescendants
+    -- doesn't clip it. A Heartbeat connection keeps it glued to wrapper's corner.
+    if self._resizable then
+        local RS = 16
+        local resizeBtn = mk("TextButton", {
+            Size = UDim2.new(0, RS, 0, RS),
+            Position = UDim2.new(0, 0, 0, 0),
+            BackgroundColor3 = C.card2, Text = "",
+            ZIndex = 70, BorderSizePixel = 0, AutoButtonColor = false,
+        }, gui)
+        rnd(resizeBtn, 5); bdr(resizeBtn, C.border, 1)
+        -- Three-dot diagonal grip
+        for di = 1, 3 do
+            mk("Frame", {
+                Size = UDim2.new(0, 2, 0, 2),
+                Position = UDim2.new(0, 3+(di-1)*4, 0, RS-5-(di-1)*4),
+                BackgroundColor3 = C.muted, BorderSizePixel = 0, ZIndex = 71,
+            }, resizeBtn)
+        end
+        resizeBtn.MouseEnter:Connect(function() tw(resizeBtn,{BackgroundColor3=C.border},.1) end)
+        resizeBtn.MouseLeave:Connect(function() tw(resizeBtn,{BackgroundColor3=C.card2},.1) end)
+        self._resizeBtn = resizeBtn
+
+        -- Track corner position every frame
+        local rbHB; rbHB = Run.Heartbeat:Connect(function()
+            if not wrapper.Parent then rbHB:Disconnect(); return end
+            local ap = wrapper.AbsolutePosition
+            local as = wrapper.AbsoluteSize
+            resizeBtn.Position = UDim2.new(0, ap.X + as.X - RS/2, 0, ap.Y + as.Y - RS/2)
+        end)
+        table.insert(self._conns, rbHB)
+
+        local resizing, rAnchor = false, nil
+        resizeBtn.InputBegan:Connect(function(i)
+            if i.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            resizing = true
+            rAnchor  = wrapper.AbsolutePosition
+        end)
+        resizeBtn.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 then resizing = false end
+        end)
+        local rsConn = UIS.InputChanged:Connect(function(i)
+            if not resizing or i.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+            local mp = Vector2.new(i.Position.X, i.Position.Y)
+            local sx = (mp.X - rAnchor.X) / (WW + 2)
+            local sy = (mp.Y - rAnchor.Y) / (WH + 2)
+            uiScale.Scale = math.clamp((sx + sy) * 0.5, 0.35, 2.0)
+        end)
+        table.insert(self._conns, rsConn)
+    end
+
     return self
 end
 
 function UI:_destroy()
     for _, c in ipairs(self._conns) do pcall(function() c:Disconnect() end) end
     if self._gui then self._gui:Destroy() end
+end
+
+-- =============================================================================
+--  NOTIFICATIONS  — toast cards that slide in from the right and stack upward
+--  opts: { Title, Message, Duration (s), Type = "info"|"success"|"warning"|"error" }
+-- =============================================================================
+function UI:Notify(opts)
+    opts = opts or {}
+    local title    = opts.Title    or "Notification"
+    local message  = opts.Message  or ""
+    local duration = opts.Duration or 4
+    local ntype    = opts.Type     or "info"
+
+    local typeAccent = {
+        info    = C.blue,
+        success = C.green,
+        warning = C.yellow,
+        error   = C.red,
+    }
+    local accent = typeAccent[ntype] or C.blue
+    local hasMsg = message ~= ""
+    local NH     = hasMsg and 72 or 52
+    local NW     = 290
+
+    self._notifStack = self._notifStack or {}
+
+    -- Shift existing cards upward to make room
+    for _, e in ipairs(self._notifStack) do
+        local cy = e.card.Position.Y.Offset
+        tw(e.card, { Position = UDim2.new(1, -NW-14, 1, cy - NH - 8) }, .2)
+    end
+
+    -- Build card (parented to ScreenGui so it's always on top)
+    local card = mk("Frame", {
+        Size = UDim2.new(0, NW, 0, NH),
+        Position = UDim2.new(1, NW + 20, 1, -NH - 14),  -- start off-screen right
+        BackgroundColor3 = C.card, BorderSizePixel = 0, ZIndex = 500,
+    }, self._gui)
+    rnd(card, 8); bdr(card, C.border, 1)
+
+    -- Coloured left strip
+    local strip = mk("Frame", {
+        Size = UDim2.new(0, 3, 1, -12),
+        Position = UDim2.new(0, 6, 0, 6),
+        BackgroundColor3 = accent, BorderSizePixel = 0, ZIndex = 501,
+    }, card)
+    rnd(strip, 99)
+
+    -- Title
+    lbl(title, C.text, 12, Enum.Font.GothamBold, card, {
+        Size = UDim2.new(1, -38, 0, 16),
+        Position = UDim2.new(0, 16, 0, hasMsg and 9 or 18),
+        ZIndex = 501,
+    })
+
+    -- Body message
+    if hasMsg then
+        lbl(message, C.sub, 11, Enum.Font.Gotham, card, {
+            Size = UDim2.new(1, -38, 0, 28),
+            Position = UDim2.new(0, 16, 0, 30),
+            ZIndex = 501, TextWrapped = true,
+        })
+    end
+
+    -- Close ✕ button
+    local xBtn = mk("TextButton", {
+        Size = UDim2.new(0, 18, 0, 18),
+        Position = UDim2.new(1, -22, 0, 6),
+        BackgroundTransparency = 1, Text = "✕",
+        TextColor3 = C.muted, Font = Enum.Font.GothamBold, TextSize = 10,
+        BorderSizePixel = 0, ZIndex = 502, AutoButtonColor = false,
+    }, card)
+    xBtn.MouseEnter:Connect(function() xBtn.TextColor3 = C.text end)
+    xBtn.MouseLeave:Connect(function() xBtn.TextColor3 = C.muted end)
+
+    -- Progress bar that shrinks over `duration` seconds
+    local bar = mk("Frame", {
+        Size = UDim2.new(1, 0, 0, 2),
+        Position = UDim2.new(0, 0, 1, -2),
+        BackgroundColor3 = accent, BorderSizePixel = 0, ZIndex = 501,
+    }, card)
+
+    local entry = { card = card, h = NH }
+    table.insert(self._notifStack, entry)
+
+    -- Slide in from right
+    tw(card, { Position = UDim2.new(1, -NW-14, 1, -NH-14) }, .28,
+        Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+
+    local dismissed = false
+    local function dismiss()
+        if dismissed then return end
+        dismissed = true
+        -- Remove from stack
+        for i, e in ipairs(self._notifStack) do
+            if e == entry then table.remove(self._notifStack, i); break end
+        end
+        -- Shift remaining cards downward to fill the gap
+        for _, e in ipairs(self._notifStack) do
+            local cy = e.card.Position.Y.Offset
+            tw(e.card, { Position = UDim2.new(1, -NW-14, 1, cy + NH + 8) }, .2)
+        end
+        -- Slide out to the right
+        tw(card, { Position = UDim2.new(1, NW + 20, 1, card.Position.Y.Offset) }, .2)
+        task.delay(.25, function() if card.Parent then card:Destroy() end end)
+    end
+
+    xBtn.MouseButton1Click:Connect(dismiss)
+
+    -- Auto-dismiss after duration (with shrinking progress bar)
+    task.spawn(function()
+        tw(bar, { Size = UDim2.new(0, 0, 0, 2) }, duration, Enum.EasingStyle.Linear)
+        task.wait(duration)
+        dismiss()
+    end)
 end
 
 function UI:_srchCard(el)
