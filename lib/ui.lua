@@ -102,6 +102,27 @@ local function guiParent()
     return lp:WaitForChild("PlayerGui")
 end
 
+-- UI.loadIcon(name) — downloads a PNG from the Veltrix icons repo once,
+-- caches it in the executor workspace, and returns a Roblox content ID.
+-- Returns "" if the executor lacks file-system APIs (getcustomasset/writefile).
+-- Call from any script: local id = UI.loadIcon("combat")
+local ICON_BASE = "https://raw.githubusercontent.com/denrigtigeMatjias/Veltrix/main/icons/"
+function UI.loadIcon(name)
+    local fname = "veltrix_icon_" .. name .. ".png"
+    if not (isfile and isfile(fname)) then
+        local ok, data = pcall(function()
+            return game:HttpGet(ICON_BASE .. name .. ".png")
+        end)
+        if ok and data and writefile then
+            pcall(writefile, fname, data)
+        end
+    end
+    if getcustomasset and isfile and isfile(fname) then
+        return getcustomasset(fname)
+    end
+    return ""
+end
+
 -- Dragging: moves `target` (wrapper) via absolute position so initial centering
 -- via Scale doesn't corrupt the offset math.
 -- canDrag()   → false prevents drag from starting (e.g. while fullscreen)
@@ -227,30 +248,9 @@ function UI:Window(opts)
     local BG   = 8    -- gap between dots
     local ctrlW = BS * 3 + BG * 2  -- = 55 px
 
-    -- ── Icon loader ──────────────────────────────────────────────────────────
-    -- Downloads each PNG from GitHub once, caches to the executor workspace,
-    -- then returns a Roblox content ID via getcustomasset.
-    -- Returns "" if the executor lacks file APIs; caller falls back to text.
-    local ICON_BASE = "https://raw.githubusercontent.com/denrigtigeMatjias/Veltrix/main/icons/"
-    local function loadIcon(name)
-        local fname = "veltrix_icon_" .. name .. ".png"
-        if not (isfile and isfile(fname)) then
-            local ok, data = pcall(function()
-                return game:HttpGet(ICON_BASE .. name .. ".png")
-            end)
-            if ok and data and writefile then
-                pcall(writefile, fname, data)
-            end
-        end
-        if getcustomasset and isfile and isfile(fname) then
-            return getcustomasset(fname)
-        end
-        return ""
-    end
-
-    local iconMin   = loadIcon("minimize")
-    local iconMax   = loadIcon("fullscreen")
-    local iconClose = loadIcon("close")
+    local iconMin   = UI.loadIcon("minimize")
+    local iconMax   = UI.loadIcon("fullscreen")
+    local iconClose = UI.loadIcon("close")
 
     local ctrlFrame = mk("Frame", {
         Size = UDim2.new(0, ctrlW, 0, BS),
@@ -744,7 +744,7 @@ function UI:Tab(name, icon)
     local td = setmetatable({ _name = name, _win = self }, { __index = Tab })
 
     -- Container button — no text; all content is in child labels so we can
-    -- independently tween the accent bar and label colour.
+    -- independently tween the accent bar, image icon, and label colour.
     local tabBtn = mk("TextButton", {
         Size = UDim2.new(1,0,0,34), BackgroundColor3 = C.sidebar,
         Text = "", BorderSizePixel = 0, AutoButtonColor = false,
@@ -760,26 +760,47 @@ function UI:Tab(name, icon)
     }, tabBtn)
     rnd(tabBar, 99)
 
-    -- Icon + name label, offset right so it never overlaps the accent bar
+    -- Detect whether `icon` is a Roblox asset ID (starts with "rbx") or an emoji string.
+    -- Image icons get their own ImageLabel; emoji icons are embedded in the text label.
+    local isImage = type(icon) == "string" and icon ~= "" and icon:sub(1,3) == "rbx"
+    local lblX    = isImage and 36 or 14   -- shift label right to clear image icon
+    local tabImg  = nil
+
+    if isImage then
+        tabImg = mk("ImageLabel", {
+            Size = UDim2.new(0,16,0,16),
+            Position = UDim2.new(0,14,0.5,-8),
+            BackgroundTransparency = 1,
+            Image = icon,
+            ImageColor3 = C.muted,
+            ZIndex = 6,
+        }, tabBtn)
+        td._img = tabImg
+    end
+
+    -- Name label — no emoji prefix when an image icon is used
     local tabLbl = lbl(
-        (icon and (icon .. "  ") or "") .. name,
+        (not isImage and icon and (icon .. "  ") or "") .. name,
         C.muted, 12, Enum.Font.Gotham, tabBtn, {
-            Size = UDim2.new(1,-14,1,0), Position = UDim2.new(0,14,0,0),
+            Size = UDim2.new(1, -(lblX+4), 1, 0),
+            Position = UDim2.new(0, lblX, 0, 0),
             ZIndex = 6,
         }
     )
 
-    -- Hover: subtle background lift and slightly brighter text (skipped when active)
+    -- Hover: subtle background lift and slightly brighter text/icon (skipped when active)
     tabBtn.MouseEnter:Connect(function()
         if self._activeTab ~= td then
             tw(tabBtn, {BackgroundColor3 = C.card},  .1)
             tw(tabLbl, {TextColor3       = C.sub},   .1)
+            if tabImg then tw(tabImg, {ImageColor3 = C.sub}, .1) end
         end
     end)
     tabBtn.MouseLeave:Connect(function()
         if self._activeTab ~= td then
             tw(tabBtn, {BackgroundColor3 = C.sidebar}, .1)
             tw(tabLbl, {TextColor3       = C.muted},   .1)
+            if tabImg then tw(tabImg, {ImageColor3 = C.muted}, .1) end
         end
     end)
 
@@ -816,6 +837,8 @@ function UI:_selectTab(t)
         end
         -- Accent bar: simply show/hide (no tween needed — bar is tiny)
         if tab._bar then tab._bar.Visible = a end
+        -- Image icon: accent colour when active, muted when idle
+        if tab._img then tw(tab._img, {ImageColor3 = a and C.accent or C.muted}, .12) end
         tab._scroll.Visible = a
     end
 end
