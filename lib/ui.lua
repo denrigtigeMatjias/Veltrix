@@ -277,22 +277,17 @@ function UI:Window(opts)
                 Size = UDim2.new(1,0,1,0),
                 BackgroundTransparency = 1,
                 Image = iconId,
-                ImageColor3 = C.muted,   -- muted at rest, brightens on hover
+                ImageColor3 = C.muted,
                 ZIndex = 6,
             }, b)
             b.MouseEnter:Connect(function()
-                tw(b,   {BackgroundColor3 = C.card2}, .1)
-                tw(img, {ImageColor3 = C.text}, .1)
-                b.BackgroundTransparency = 0
+                tw(img, {ImageColor3 = C.white}, .1)
             end)
             b.MouseLeave:Connect(function()
-                tw(b, {BackgroundColor3 = C.bg}, .1)
                 tw(img, {ImageColor3 = C.muted}, .1)
-                task.delay(.12, function() b.BackgroundTransparency = 1 end)
             end)
         else
-            -- Text fallback hover
-            b.MouseEnter:Connect(function() tw(b, {TextColor3 = C.text}, .1) end)
+            b.MouseEnter:Connect(function() tw(b, {TextColor3 = C.white}, .1) end)
             b.MouseLeave:Connect(function() tw(b, {TextColor3 = C.muted}, .1) end)
         end
         return b
