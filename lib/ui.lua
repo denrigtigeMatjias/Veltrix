@@ -106,7 +106,10 @@ end
 -- via Scale doesn't corrupt the offset math.
 -- canDrag()   → false prevents drag from starting (e.g. while fullscreen)
 -- shouldClamp() → true clamps position to screen bounds
-local function makeDraggable(target, handle, canDrag, shouldClamp)
+-- onMove(nx, ny) is called every time the target moves, with the new pixel
+-- top-left position. Use it to reposition widgets that live outside `target`
+-- (e.g. the resize-grip button) without a one-frame AbsolutePosition lag.
+local function makeDraggable(target, handle, canDrag, shouldClamp, onMove)
     local dragging, sp, sf = false, nil, nil
     handle.InputBegan:Connect(function(i)
         if i.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
@@ -131,6 +134,7 @@ local function makeDraggable(target, handle, canDrag, shouldClamp)
             ny = math.clamp(ny, 0, math.max(0, vp.Y - inset.Y - fs.Y))
         end
         target.Position = UDim2.new(0, nx, 0, ny)
+        if onMove then onMove(nx, ny) end
     end)
 end
 
@@ -242,9 +246,17 @@ function UI:Window(opts)
 
     -- Drag moves the outer wrapper, not the inner frame.
     -- canDrag prevents dragging while fullscreen; shouldClamp keeps it on-screen.
+    -- onMove updates the resize button position immediately (no Heartbeat lag).
     makeDraggable(wrapper, hdr,
         function() return not self._enlarged end,
-        function() return self._clamp end)
+        function() return self._clamp end,
+        function(nx, ny)
+            if self._resizeBtn then
+                local rs = self._resizeBtn.Size.X.Offset
+                local as = wrapper.AbsoluteSize
+                self._resizeBtn.Position = UDim2.new(0, nx + as.X - rs, 0, ny + as.Y - rs)
+            end
+        end)
 
     -- Sidebar — height is relative (1, -sbY) so it stretches when wrapper is resized.
     local sbY = HH + 2
@@ -488,6 +500,9 @@ function UI:Window(opts)
             local newW = math.clamp(math.floor(mp.X - rAnchor.X), MIN_W, 2400)
             local newH = math.clamp(math.floor(mp.Y - rAnchor.Y), MIN_H, 1400)
             wrapper.Size = UDim2.new(0, newW, 0, newH)
+            -- Update grip position synchronously — avoids the one-frame lag that
+            -- reading wrapper.AbsolutePosition inside Heartbeat would introduce.
+            resizeBtn.Position = UDim2.new(0, rAnchor.X + newW - RS, 0, rAnchor.Y + newH - RS)
         end)
         table.insert(self._conns, rsConn)
     end
@@ -1416,12 +1431,15 @@ function Segment:ColorPicker(name, opts, cb)
             end
         end)
 
-        -- Outside click (swatch excluded so toggle works cleanly)
+        -- Outside click (swatch excluded so toggle works cleanly).
+        -- Use i.Position rather than UIS:GetMouseLocation() — both report GUI-space
+        -- coordinates and i.Position avoids the screen-vs-GUI offset discrepancy
+        -- that could cause false "outside" hits while dragging the hue/SV controls.
         local outsideConn
         outsideConn = UIS.InputBegan:Connect(function(i)
             if i.UserInputType~=Enum.UserInputType.MouseButton1 then return end
             if not pickerFr then outsideConn:Disconnect(); return end
-            local mp=UIS:GetMouseLocation()
+            local mp = Vector2.new(i.Position.X, i.Position.Y)
             local pa=pickerFr.AbsolutePosition; local ps=pickerFr.AbsoluteSize
             if mp.X>=pa.X and mp.X<=pa.X+ps.X and mp.Y>=pa.Y and mp.Y<=pa.Y+ps.Y then return end
             local sa=swatch.AbsolutePosition; local ss=swatch.AbsoluteSize
