@@ -130,8 +130,11 @@ local function makeDraggable(target, handle, canDrag, shouldClamp, onMove)
             local vp    = workspace.CurrentCamera.ViewportSize
             local inset = game:GetService("GuiService"):GetGuiInset()
             local fs    = target.AbsoluteSize
-            nx = math.clamp(nx, 0, math.max(0, vp.X - fs.X))
-            ny = math.clamp(ny, 0, math.max(0, vp.Y - inset.Y - fs.Y))
+            -- Allow the wrapper to sit 1 px past each edge so its 1-px border
+            -- bleeds off-screen, making the inner content flush with the screen edge
+            -- (same technique used for fullscreen mode).
+            nx = math.clamp(nx, -1, math.max(-1, vp.X - fs.X + 1))
+            ny = math.clamp(ny, -1, math.max(-1, vp.Y - inset.Y - fs.Y + 1))
         end
         target.Position = UDim2.new(0, nx, 0, ny)
         if onMove then onMove(nx, ny) end
@@ -152,6 +155,7 @@ function UI:Window(opts)
         _conns      = {},
         _visible    = true,
         _enlarged   = false,
+        _minimized  = false,
         _clamp      = opts.ClampScreen ~= false,
         _resizable  = opts.Resizable  ~= false,
         _uiKey      = opts.ToggleKey or Enum.KeyCode.RightShift,
@@ -217,27 +221,47 @@ function UI:Window(opts)
         Size = UDim2.new(0,140,0,20), Position = UDim2.new(0,28,0.5,-10), ZIndex = 4,
     })
 
+    -- Traffic-light window controls (macOS style):  ●min  ●max  ●close
+    -- Circles show a symbol on hover; otherwise they're solid colour dots.
+    local BS   = 13   -- dot diameter
+    local BG   = 8    -- gap between dots
+    local ctrlW = BS * 3 + BG * 2  -- = 55 px
+
+    -- macOS-inspired palette
+    local TL_MIN   = Color3.fromRGB(255, 189, 46)   -- yellow  (minimize)
+    local TL_MAX   = Color3.fromRGB(52,  199, 89)   -- green   (fullscreen)
+    local TL_CLOSE = Color3.fromRGB(255, 95,  87)   -- red     (close)
+
     local ctrlFrame = mk("Frame", {
-        Size = UDim2.new(0,64,0,26), Position = UDim2.new(1,-72,0.5,-13),
+        Size = UDim2.new(0, ctrlW, 0, BS),
+        Position = UDim2.new(1, -(ctrlW + 14), 0.5, -math.floor(BS/2)),
         BackgroundTransparency = 1, ZIndex = 4,
     }, hdr)
-    lst(ctrlFrame, Enum.FillDirection.Horizontal, 4)
+    lst(ctrlFrame, Enum.FillDirection.Horizontal, BG)
 
-    local function ctrlBtn(sym, col)
+    local function trafficBtn(baseCol, sym)
         local b = mk("TextButton", {
-            Size = UDim2.new(0,28,0,26), BackgroundColor3 = C.card2,
-            Text = sym, TextColor3 = col or C.sub,
-            Font = Enum.Font.GothamBold, TextSize = 13,
+            Size = UDim2.new(0, BS, 0, BS),
+            BackgroundColor3 = baseCol,
+            Text = "", Font = Enum.Font.GothamBold, TextSize = 9,
+            TextColor3 = baseCol:Lerp(Color3.new(0,0,0), .55),
             BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 5,
         }, ctrlFrame)
-        rnd(b, 6); bdr(b, C.border, 1)
-        b.MouseEnter:Connect(function() tw(b,{BackgroundColor3=C.border},.1) end)
-        b.MouseLeave:Connect(function() tw(b,{BackgroundColor3=C.card2},.1) end)
+        rnd(b, 99)
+        b.MouseEnter:Connect(function()
+            b.Text = sym
+            tw(b, {BackgroundColor3 = baseCol:Lerp(Color3.new(0,0,0), .18)}, .1)
+        end)
+        b.MouseLeave:Connect(function()
+            b.Text = ""
+            tw(b, {BackgroundColor3 = baseCol}, .1)
+        end)
         return b
     end
 
-    local enlargeBtn = ctrlBtn("+", C.sub)
-    local closeBtn   = ctrlBtn("x", C.red)
+    local minBtn     = trafficBtn(TL_MIN,   "−")
+    local enlargeBtn = trafficBtn(TL_MAX,   "+")
+    local closeBtn   = trafficBtn(TL_CLOSE, "×")
 
     mk("Frame", {
         Size = UDim2.new(1,0,0,1), Position = UDim2.new(0,0,1,-1),
@@ -384,7 +408,10 @@ function UI:Window(opts)
     local function setVis(v)
         self._visible = v
         wrapper.Visible = v
-        if self._resizeBtn then self._resizeBtn.Visible = v end
+        -- Resize grip only visible when the window is shown, not minimized, not fullscreen
+        if self._resizeBtn then
+            self._resizeBtn.Visible = v and not self._minimized and not self._enlarged
+        end
     end
 
     -- No gp check on keyboard so modifier keys like RightShift work as toggle.
@@ -399,6 +426,7 @@ function UI:Window(opts)
     -- ViewportSize includes the Roblox top bar; GuiInset gives its height so we
     -- can position from y=0 and fill to the bottom of the ScreenGui space.
     enlargeBtn.MouseButton1Click:Connect(function()
+        if self._minimized then return end   -- can't fullscreen while collapsed
         self._enlarged = not self._enlarged
         local wc = wrapper:FindFirstChildOfClass("UICorner")
         if self._enlarged then
@@ -406,26 +434,41 @@ function UI:Window(opts)
             self._preFS_pos = wrapper.Position
             local vp    = workspace.CurrentCamera.ViewportSize
             local inset = game:GetService("GuiService"):GetGuiInset()
-            -- The inner frame is 1 px inset from wrapper on every side (the border).
-            -- Grow the wrapper by 2 px and shift it -1 px so the inner frame lands
-            -- flush with every screen edge — no border strip visible.
+            -- Grow the wrapper by 2 px and shift it -1 px so the 1-px border
+            -- bleeds off-screen, leaving the inner content flush with every edge.
             wrapper.Size     = UDim2.new(0, vp.X + 2, 0, vp.Y - inset.Y + 2)
             wrapper.Position = UDim2.new(0, -1, 0, -1)
-            -- Zero out rounding so the corners reach the screen edges
             if wc then wc.CornerRadius = UDim.new(0, 0) end
-            enlargeBtn.Text  = "-"
             if self._resizeBtn then self._resizeBtn.Visible = false end
         else
             wrapper.Size     = self._preFS_sz  or normSz
             wrapper.Position = self._preFS_pos or normPos
-            -- Restore rounded corners
             if wc then wc.CornerRadius = UDim.new(0, 13) end
-            enlargeBtn.Text  = "+"
             if self._resizeBtn then self._resizeBtn.Visible = self._visible end
         end
     end)
 
     closeBtn.MouseButton1Click:Connect(function() setVis(false) end)
+
+    -- Minimize: collapse wrapper to just the header bar height, click again to restore.
+    -- The wrapper's ClipsDescendants hides all content below the header automatically.
+    minBtn.MouseButton1Click:Connect(function()
+        if self._enlarged then return end   -- restore fullscreen first
+        self._minimized = not self._minimized
+        local wc = wrapper:FindFirstChildOfClass("UICorner")
+        if self._minimized then
+            self._preMin_sz  = wrapper.Size
+            self._preMin_pos = wrapper.Position
+            -- Height = accent bar (2) + header (HH) + 1px bottom border visible = HH+4
+            local collapsedH = HH + 4
+            tw(wrapper, { Size = UDim2.new(0, wrapper.AbsoluteSize.X, 0, collapsedH) },
+                .2, Enum.EasingStyle.Quad)
+            if self._resizeBtn then self._resizeBtn.Visible = false end
+        else
+            tw(wrapper, { Size = self._preMin_sz or normSz }, .2, Enum.EasingStyle.Quad)
+            if self._resizeBtn then self._resizeBtn.Visible = self._visible end
+        end
+    end)
 
     -- Uptime
     self._uptimeFns = {}
@@ -1320,12 +1363,12 @@ function Segment:ColorPicker(name, opts, cb)
         local as = swatch.AbsoluteSize
         local vp = workspace.CurrentCamera.ViewportSize
         -- PW = SV + 20 so the 10px left/right padding fills exactly to the SV box edges.
-        -- PH = 10(top) + SV(152) + 8(gap) + 12(hue) + 6(gap) + 22(hex) + 10(bottom) = 220
+        -- PH = 10(top) + SV(152) + 8(gap) + 14(hue) + 6(gap) + 22(hex) + 10(bottom) = 222
         local PW = SV + 20   -- 172
-        local PH = 220
+        local PH = 222
         local px = math.clamp(ap.X + as.X - PW, 4, vp.X - PW - 4)
         local py = ap.Y + as.Y + 6
-        if py + PH > vp.Y then py = ap.Y - PH - 6 end
+        if py + PH > vp.Y - 8 then py = ap.Y - PH - 6 end
 
         pickerFr = mk("Frame", {
             Size=UDim2.new(0,PW,0,PH), Position=UDim2.new(0,px,0,py),
@@ -1340,13 +1383,13 @@ function Segment:ColorPicker(name, opts, cb)
             BackgroundColor3=Color3.fromHSV(h_h,1,1),
             BorderSizePixel=0, ZIndex=61,
         }, pickerFr)
-        rnd(svBox, 4)
+        rnd(svBox, 7)
 
         local whiteOv = mk("Frame", {
             Size=UDim2.new(1,0,1,0), BackgroundColor3=Color3.new(1,1,1),
             BorderSizePixel=0, ZIndex=62,
         }, svBox)
-        rnd(whiteOv, 4)
+        rnd(whiteOv, 7)
         mk("UIGradient",{
             Color=ColorSequence.new(Color3.new(1,1,1),Color3.new(1,1,1)),
             Transparency=NumberSequence.new({
@@ -1358,7 +1401,7 @@ function Segment:ColorPicker(name, opts, cb)
             Size=UDim2.new(1,0,1,0), BackgroundColor3=Color3.new(0,0,0),
             BorderSizePixel=0, ZIndex=63,
         }, svBox)
-        rnd(blackOv, 4)
+        rnd(blackOv, 7)
         mk("UIGradient",{
             Color=ColorSequence.new(Color3.new(0,0,0),Color3.new(0,0,0)),
             Transparency=NumberSequence.new({
@@ -1366,12 +1409,13 @@ function Segment:ColorPicker(name, opts, cb)
             }), Rotation=90,
         }, blackOv)
 
+        -- SV thumb: 12×12 circle with a white ring and dark shadow border
         local svThumb = mk("Frame", {
-            Size=UDim2.new(0,10,0,10), AnchorPoint=Vector2.new(.5,.5),
+            Size=UDim2.new(0,12,0,12), AnchorPoint=Vector2.new(.5,.5),
             Position=UDim2.new(s_h,0,1-v_h,0),
             BackgroundColor3=C.white, BorderSizePixel=0, ZIndex=65,
         }, svBox)
-        rnd(svThumb, 99); bdr(svThumb, C.black, 1.5)
+        rnd(svThumb, 99); bdr(svThumb, C.black, 2)
 
         -- Transparent catch layer on top of ALL SV children so InputBegan fires here.
         -- This fixes the issue where clicks on overlay frames would be swallowed,
@@ -1381,46 +1425,67 @@ function Segment:ColorPicker(name, opts, cb)
             Text="", ZIndex=67, BorderSizePixel=0, AutoButtonColor=false,
         }, svBox)
 
-        -- Hue bar
+        -- Hue bar (14 px tall for easier grabbing)
+        local HB = 14  -- hue bar height
         local hBar = mk("ImageLabel", {
-            Size=UDim2.new(0,SV,0,12), Position=UDim2.new(0,0,0,SV+8),
+            Size=UDim2.new(0,SV,0,HB), Position=UDim2.new(0,0,0,SV+8),
             Image="rbxassetid://698052001",
             BackgroundTransparency=1, ZIndex=61,
         }, pickerFr)
-        rnd(hBar, 4)
+        rnd(hBar, 7)
+        -- Thumb protrudes 3 px above and below the bar so it's easy to see and grab
         local hThumb = mk("Frame", {
-            Size=UDim2.new(0,4,0,12), AnchorPoint=Vector2.new(.5,0),
-            Position=UDim2.new(h_h,0,0,0),
+            Size=UDim2.new(0,5,1,6), AnchorPoint=Vector2.new(.5,.5),
+            Position=UDim2.new(h_h,0,.5,0),
             BackgroundColor3=C.white, BorderSizePixel=0, ZIndex=62,
         }, hBar)
-        rnd(hThumb, 3); bdr(hThumb, C.border, 1)
+        rnd(hThumb, 99); bdr(hThumb, C.black, 1.5)
         local hueCatch = mk("TextButton", {
             Size=UDim2.new(1,0,1,0), BackgroundTransparency=1,
             Text="", ZIndex=63, BorderSizePixel=0, AutoButtonColor=false,
         }, hBar)
 
-        -- Hex input
+        -- Hex row: rounded preview swatch on the left + hex text input on the right
+        -- y = SV + 8(gap) + HB(hue bar) + 6(gap) = SV + 8 + HB + 6
+        local hexY  = SV + 8 + HB + 6   -- = 180
+        local PSW   = 28   -- preview swatch width
+        local PSG   = 5    -- gap between swatch and input
+
+        local prevSw = mk("Frame", {
+            Size=UDim2.new(0,PSW,0,22), Position=UDim2.new(0,0,0,hexY),
+            BackgroundColor3=el._value, BorderSizePixel=0, ZIndex=61,
+        }, pickerFr)
+        rnd(prevSw, 6); bdr(prevSw, C.border, 1)
+
         local hexBg = mk("Frame", {
-            Size=UDim2.new(0,SV,0,22), Position=UDim2.new(0,0,0,SV+26),
+            Size=UDim2.new(0,SV-PSW-PSG,0,22), Position=UDim2.new(0,PSW+PSG,0,hexY),
             BackgroundColor3=C.card2, BorderSizePixel=0, ZIndex=61,
         }, pickerFr)
-        rnd(hexBg, 5)
+        rnd(hexBg, 6)
         local hexSt = bdr(hexBg, C.border, 1)
-        pad(hexBg, 0,6,0,6)
+
+        -- "HEX" prefix (non-interactive cosmetic label)
+        lbl("HEX", C.muted, 9, Enum.Font.GothamBold, hexBg, {
+            Size=UDim2.new(0,24,1,0), Position=UDim2.new(0,5,0,0),
+            ZIndex=63, TextXAlignment=Enum.TextXAlignment.Left,
+        })
         local hexBox = mk("TextBox", {
-            Size=UDim2.new(1,0,1,0), BackgroundTransparency=1,
+            Size=UDim2.new(1,-30,1,0), Position=UDim2.new(0,28,0,0),
+            BackgroundTransparency=1,
             Text=toHex(el._value), TextColor3=C.text,
-            Font=Enum.Font.Code, TextSize=11,  -- Code only here for monospace hex
+            Font=Enum.Font.Code, TextSize=11,   -- Code only here for monospace hex
             ClearTextOnFocus=false, ZIndex=62,
         }, hexBg)
 
         local function apply(nh, ns, nv)
             h_h,s_h,v_h = nh,ns,nv
             local col = Color3.fromHSV(nh,ns,nv)
-            el._value=col; swatch.BackgroundColor3=col
+            el._value=col
+            swatch.BackgroundColor3=col
+            prevSw.BackgroundColor3=col        -- keep preview swatch in sync
             svBox.BackgroundColor3=Color3.fromHSV(nh,1,1)
             svThumb.Position=UDim2.new(ns,0,1-nv,0)
-            hThumb.Position=UDim2.new(nh,0,0,0)
+            hThumb.Position=UDim2.new(nh,0,.5,0)  -- centred vertically (matches AnchorPoint)
             hexBox.Text=toHex(col)
             if cb then task.spawn(cb,col) end
         end
