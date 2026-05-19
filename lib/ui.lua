@@ -240,28 +240,32 @@ function UI:Window(opts)
     lst(ctrlFrame, Enum.FillDirection.Horizontal, BG)
 
     local function trafficBtn(baseCol, sym)
+        -- Icon is always visible; background darkens slightly on hover.
         local b = mk("TextButton", {
             Size = UDim2.new(0, BS, 0, BS),
             BackgroundColor3 = baseCol,
-            Text = "", Font = Enum.Font.GothamBold, TextSize = 9,
+            Text = sym, Font = Enum.Font.GothamBold, TextSize = 9,
+            -- Dark-tinted version of the button colour so the icon reads on the dot
             TextColor3 = baseCol:Lerp(Color3.new(0,0,0), .55),
             BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 5,
         }, ctrlFrame)
         rnd(b, 99)
         b.MouseEnter:Connect(function()
-            b.Text = sym
             tw(b, {BackgroundColor3 = baseCol:Lerp(Color3.new(0,0,0), .18)}, .1)
         end)
         b.MouseLeave:Connect(function()
-            b.Text = ""
             tw(b, {BackgroundColor3 = baseCol}, .1)
         end)
         return b
     end
 
-    local minBtn     = trafficBtn(TL_MIN,   "−")
-    local enlargeBtn = trafficBtn(TL_MAX,   "+")
-    local closeBtn   = trafficBtn(TL_CLOSE, "×")
+    -- Unicode icons match standard window-control glyphs:
+    --   — thin horizontal bar (minimize / collapse)
+    --   □ empty square        (fullscreen / restore)
+    --   ✕ multiplication sign (close)
+    local minBtn     = trafficBtn(TL_MIN,   "—")
+    local enlargeBtn = trafficBtn(TL_MAX,   "□")
+    local closeBtn   = trafficBtn(TL_CLOSE, "✕")
 
     mk("Frame", {
         Size = UDim2.new(1,0,0,1), Position = UDim2.new(0,0,1,-1),
@@ -889,9 +893,11 @@ function Segment:HoldButton(name, opts, cb)
     }, row)
     rnd(btnFrame, 6); bdr(btnFrame, C.border, 1)
 
-    -- Fill that grows left-to-right behind the text
+    -- Fill starts at zero width (invisible) and grows to full width on hold.
+    -- Position is anchored at x=0 so UICorner rounds BOTH the left and right
+    -- ends — the old negative-offset trick clipped the left corner off.
     local fill = mk("Frame", {
-        Size = UDim2.new(0,6,1,0), Position = UDim2.new(0,-6,0,0),
+        Size = UDim2.new(0,0,1,0), Position = UDim2.new(0,0,0,0),
         BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 8,
     }, btnFrame)
     rnd(fill, 6)
@@ -915,11 +921,11 @@ function Segment:HoldButton(name, opts, cb)
         hConn = Run.Heartbeat:Connect(function()
             if not held then hConn:Disconnect(); return end
             local p = math.min((tick()-t0)/holdTime, 1)
-            fill.Size = UDim2.new(p,6,1,0)
+            fill.Size = UDim2.new(p,0,1,0)
             if p >= 1 then
                 held=false; hConn:Disconnect()
                 textLbl.TextColor3 = C.sub
-                tw(fill,{Size=UDim2.new(0,6,1,0)},.15)
+                tw(fill,{Size=UDim2.new(0,0,1,0)},.15)
                 if cb then task.spawn(cb) end
             end
         end)
@@ -927,7 +933,7 @@ function Segment:HoldButton(name, opts, cb)
     clickBtn.InputEnded:Connect(function(i)
         if i.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
         held=false; textLbl.TextColor3 = C.sub
-        tw(fill,{Size=UDim2.new(0,6,1,0)},.15)
+        tw(fill,{Size=UDim2.new(0,0,1,0)},.15)
     end)
     el._instance = btnFrame
     return el
@@ -978,7 +984,28 @@ function Segment:Toggle(name, opts, cb)
     },pill).MouseButton1Click:Connect(function() setState(not el._value, true) end)
 
     if bindable then
-        local boundKey = nil
+        -- boundInput = { utype = UserInputType, code = KeyCode | nil }
+        -- Supports keyboard keys, left mouse button (LMB), right mouse button (RMB).
+        local boundInput = nil
+
+        local function inputLabel(i)
+            local ut = i.UserInputType
+            if ut == Enum.UserInputType.MouseButton1 then return "LMB"
+            elseif ut == Enum.UserInputType.MouseButton2 then return "RMB"
+            elseif ut == Enum.UserInputType.Keyboard    then return i.KeyCode.Name:sub(1,8)
+            end
+            return "?"
+        end
+
+        local function inputMatches(i)
+            if not boundInput then return false end
+            if i.UserInputType ~= boundInput.utype then return false end
+            if boundInput.utype == Enum.UserInputType.Keyboard then
+                return i.KeyCode == boundInput.code
+            end
+            return true   -- mouse button — type match is enough
+        end
+
         local bBtn = mk("TextButton", {
             Size = UDim2.new(0,40,0,18),
             Position = UDim2.new(1,-pillOff+PW+6, 0.5, -9),
@@ -993,17 +1020,23 @@ function Segment:Toggle(name, opts, cb)
         bBtn.MouseButton1Click:Connect(function()
             if listening then return end
             listening = true; bBtn.Text = "..."; bBtn.TextColor3 = C.yellow
+            -- The MouseButton1Click fires on *release*, so the next InputBegan
+            -- event is a brand-new press — safe to capture without a task.wait.
             local c; c = UIS.InputBegan:Connect(function(i)
-                if i.UserInputType ~= Enum.UserInputType.Keyboard then return end
-                boundKey = i.KeyCode
-                bBtn.Text = i.KeyCode.Name:sub(1,8)
-                bBtn.TextColor3 = C.accent
-                listening = false; c:Disconnect()
+                local ut = i.UserInputType
+                if ut == Enum.UserInputType.Keyboard
+                or ut == Enum.UserInputType.MouseButton1
+                or ut == Enum.UserInputType.MouseButton2 then
+                    boundInput = { utype = ut, code = i.KeyCode }
+                    bBtn.Text = inputLabel(i)
+                    bBtn.TextColor3 = C.accent
+                    listening = false; c:Disconnect()
+                end
             end)
         end)
+
         local bc = UIS.InputBegan:Connect(function(i)
-            if i.UserInputType ~= Enum.UserInputType.Keyboard then return end
-            if boundKey and i.KeyCode == boundKey then setState(not el._value, true) end
+            if inputMatches(i) then setState(not el._value, true) end
         end)
         table.insert(self._win._conns, bc)
     end
