@@ -178,10 +178,6 @@ function UI:Window(opts)
     rnd(wrapper, 13)
     self._wrapper = wrapper
 
-    -- UIScale lives on the wrapper so fullscreen mode scales all content.
-    local uiScale = mk("UIScale", {Scale = 1}, wrapper)
-    self._uiScale = uiScale
-
     -- frame has no UICorner: all rounded-corner clipping is delegated to wrapper
     -- (ClipsDescendants + UICorner r=13). Frame clips its children to a rectangle;
     -- wrapper then clips the whole lot to the rounded shape. One reliable clip layer.
@@ -243,15 +239,14 @@ function UI:Window(opts)
     -- Drag moves the outer wrapper, not the inner frame.
     makeDraggable(wrapper, hdr, function() return self._clamp and not self._enlarged end)
 
-    -- Sidebar
+    -- Sidebar — height is relative (1, -sbY) so it stretches when wrapper is resized.
     local sbY = HH + 2
-    local sbH = WH - sbY
     local sidebar = mk("Frame", {
-        Size = UDim2.new(0,SW,0,sbH), Position = UDim2.new(0,0,0,sbY),
+        Size = UDim2.new(0,SW,1,-sbY), Position = UDim2.new(0,0,0,sbY),
         BackgroundColor3 = C.sidebar, BorderSizePixel = 0, ZIndex = 3,
     }, frame)
     mk("Frame", {
-        Size = UDim2.new(0,1,0,sbH), Position = UDim2.new(0,SW,0,sbY),
+        Size = UDim2.new(0,1,1,-sbY), Position = UDim2.new(0,SW,0,sbY),
         BackgroundColor3 = C.border, BorderSizePixel = 0, ZIndex = 3,
     }, frame)
 
@@ -325,15 +320,14 @@ function UI:Window(opts)
     lst(tabList, Enum.FillDirection.Vertical, 2)
     self._tabList = tabList
 
-    -- Content area
-    local cX = SW + 1
-    local cW = WW - cX
-    local cY = sbY
-    local cH = WH - cY
-
+    -- Content area — uses relative sizing so both search bar and content area
+    -- automatically stretch when the wrapper is resized in either direction.
+    local cX   = SW + 1
+    local cY   = sbY
     local srchH = 36
+
     local srchBar = mk("Frame", {
-        Size = UDim2.new(0,cW,0,srchH), Position = UDim2.new(0,cX,0,cY),
+        Size = UDim2.new(1,-cX,0,srchH), Position = UDim2.new(0,cX,0,cY),
         BackgroundColor3 = C.bg, BorderSizePixel = 0, ZIndex = 3,
     }, frame)
     local srchBox = mk("TextBox", {
@@ -351,7 +345,7 @@ function UI:Window(opts)
     self._srchBox = srchBox
 
     local contentArea = mk("Frame", {
-        Size = UDim2.new(0,cW,0,cH-srchH), Position = UDim2.new(0,cX,0,cY+srchH),
+        Size = UDim2.new(1,-cX,1,-cY-srchH), Position = UDim2.new(0,cX,0,cY+srchH),
         BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 3,
         ClipsDescendants = true,
     }, frame)
@@ -382,30 +376,24 @@ function UI:Window(opts)
     end)
     table.insert(self._conns, kc)
 
-    -- Fullscreen: scale content via UIScale so layout proportions are preserved.
-    -- ViewportSize includes the Roblox top bar; subtract GuiInset so the UI
-    -- fits within the ScreenGui's usable coordinate space (y=0 is below the bar).
+    -- Fullscreen: resize wrapper to fill the entire usable screen area.
+    -- ViewportSize includes the Roblox top bar; GuiInset gives its height so we
+    -- can position from y=0 and fill to the bottom of the ScreenGui space.
     enlargeBtn.MouseButton1Click:Connect(function()
         self._enlarged = not self._enlarged
         if self._enlarged then
-            self._preFS = wrapper.Position
-            local vp     = workspace.CurrentCamera.ViewportSize
-            local inset  = game:GetService("GuiService"):GetGuiInset()
-            local availW = vp.X
-            local availH = vp.Y - inset.Y
-            local s      = math.min(availW / (WW+2), availH / (WH+2))
-            uiScale.Scale = s
-            local sw = math.floor((WW+2)*s + .5)
-            local sh = math.floor((WH+2)*s + .5)
-            wrapper.Position = UDim2.new(0,
-                math.floor((availW - sw) / 2), 0,
-                math.floor((availH - sh) / 2))
-            enlargeBtn.Text = "-"
+            self._preFS_sz  = wrapper.Size
+            self._preFS_pos = wrapper.Position
+            local vp    = workspace.CurrentCamera.ViewportSize
+            local inset = game:GetService("GuiService"):GetGuiInset()
+            wrapper.Size     = UDim2.new(0, vp.X, 0, vp.Y - inset.Y)
+            wrapper.Position = UDim2.new(0, 0, 0, 0)
+            enlargeBtn.Text  = "-"
             if self._resizeBtn then self._resizeBtn.Visible = false end
         else
-            uiScale.Scale = 1
-            wrapper.Position = self._preFS or normPos
-            enlargeBtn.Text = "+"
+            wrapper.Size     = self._preFS_sz  or normSz
+            wrapper.Position = self._preFS_pos or normPos
+            enlargeBtn.Text  = "+"
             if self._resizeBtn then self._resizeBtn.Visible = self._visible end
         end
     end)
@@ -438,35 +426,35 @@ function UI:Window(opts)
         end
     end)
 
-    -- Resize handle — child of gui (ScreenGui), not wrapper, so ClipsDescendants
-    -- doesn't clip it. A Heartbeat connection keeps it glued to wrapper's corner.
+    -- Resize handle — triangle (◢) in the bottom-right corner.
+    -- Lives in the ScreenGui so wrapper's ClipsDescendants never hides it.
+    -- Dragging moves the bottom-right corner freely in both X and Y; the
+    -- top-left corner (wrapper.Position) stays fixed.
     if self._resizable then
-        local RS = 16
+        local RS  = 18
+        local MIN_W = 520
+        local MIN_H = 320
+
         local resizeBtn = mk("TextButton", {
             Size = UDim2.new(0, RS, 0, RS),
-            Position = UDim2.new(0, 0, 0, 0),
-            BackgroundColor3 = C.card2, Text = "",
+            BackgroundTransparency = 1,
+            Text = "◢", TextColor3 = C.muted,
+            Font = Enum.Font.GothamBold, TextSize = RS,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            TextYAlignment = Enum.TextYAlignment.Center,
             ZIndex = 70, BorderSizePixel = 0, AutoButtonColor = false,
         }, gui)
-        rnd(resizeBtn, 5); bdr(resizeBtn, C.border, 1)
-        -- Three-dot diagonal grip
-        for di = 1, 3 do
-            mk("Frame", {
-                Size = UDim2.new(0, 2, 0, 2),
-                Position = UDim2.new(0, 3+(di-1)*4, 0, RS-5-(di-1)*4),
-                BackgroundColor3 = C.muted, BorderSizePixel = 0, ZIndex = 71,
-            }, resizeBtn)
-        end
-        resizeBtn.MouseEnter:Connect(function() tw(resizeBtn,{BackgroundColor3=C.border},.1) end)
-        resizeBtn.MouseLeave:Connect(function() tw(resizeBtn,{BackgroundColor3=C.card2},.1) end)
+        resizeBtn.MouseEnter:Connect(function() resizeBtn.TextColor3 = C.accent end)
+        resizeBtn.MouseLeave:Connect(function() resizeBtn.TextColor3 = C.muted end)
         self._resizeBtn = resizeBtn
 
-        -- Track corner position every frame
+        -- Pin triangle to wrapper's bottom-right corner every frame
         local rbHB; rbHB = Run.Heartbeat:Connect(function()
             if not wrapper.Parent then rbHB:Disconnect(); return end
             local ap = wrapper.AbsolutePosition
             local as = wrapper.AbsoluteSize
-            resizeBtn.Position = UDim2.new(0, ap.X + as.X - RS/2, 0, ap.Y + as.Y - RS/2)
+            -- Align so the triangle sits flush inside the corner
+            resizeBtn.Position = UDim2.new(0, ap.X + as.X - RS, 0, ap.Y + as.Y - RS)
         end)
         table.insert(self._conns, rbHB)
 
@@ -474,17 +462,17 @@ function UI:Window(opts)
         resizeBtn.InputBegan:Connect(function(i)
             if i.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
             resizing = true
-            rAnchor  = wrapper.AbsolutePosition
+            rAnchor  = wrapper.AbsolutePosition  -- top-left stays fixed while dragging
         end)
         resizeBtn.InputEnded:Connect(function(i)
             if i.UserInputType == Enum.UserInputType.MouseButton1 then resizing = false end
         end)
         local rsConn = UIS.InputChanged:Connect(function(i)
             if not resizing or i.UserInputType ~= Enum.UserInputType.MouseMovement then return end
-            local mp = Vector2.new(i.Position.X, i.Position.Y)
-            local sx = (mp.X - rAnchor.X) / (WW + 2)
-            local sy = (mp.Y - rAnchor.Y) / (WH + 2)
-            uiScale.Scale = math.clamp((sx + sy) * 0.5, 0.35, 2.0)
+            local mp   = Vector2.new(i.Position.X, i.Position.Y)
+            local newW = math.clamp(math.floor(mp.X - rAnchor.X), MIN_W, 2400)
+            local newH = math.clamp(math.floor(mp.Y - rAnchor.Y), MIN_H, 1400)
+            wrapper.Size = UDim2.new(0, newW, 0, newH)
         end)
         table.insert(self._conns, rsConn)
     end
