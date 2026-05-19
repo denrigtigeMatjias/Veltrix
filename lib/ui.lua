@@ -104,10 +104,13 @@ end
 
 -- Dragging: moves `target` (wrapper) via absolute position so initial centering
 -- via Scale doesn't corrupt the offset math.
-local function makeDraggable(target, handle, shouldClamp)
+-- canDrag()   → false prevents drag from starting (e.g. while fullscreen)
+-- shouldClamp() → true clamps position to screen bounds
+local function makeDraggable(target, handle, canDrag, shouldClamp)
     local dragging, sp, sf = false, nil, nil
     handle.InputBegan:Connect(function(i)
         if i.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+        if canDrag and not canDrag() then return end
         dragging = true
         sp = Vector2.new(i.Position.X, i.Position.Y)
         sf = target.AbsolutePosition
@@ -237,7 +240,10 @@ function UI:Window(opts)
     }, hdr)
 
     -- Drag moves the outer wrapper, not the inner frame.
-    makeDraggable(wrapper, hdr, function() return self._clamp and not self._enlarged end)
+    -- canDrag prevents dragging while fullscreen; shouldClamp keeps it on-screen.
+    makeDraggable(wrapper, hdr,
+        function() return not self._enlarged end,
+        function() return self._clamp end)
 
     -- Sidebar — height is relative (1, -sbY) so it stretches when wrapper is resized.
     local sbY = HH + 2
@@ -381,6 +387,7 @@ function UI:Window(opts)
     -- can position from y=0 and fill to the bottom of the ScreenGui space.
     enlargeBtn.MouseButton1Click:Connect(function()
         self._enlarged = not self._enlarged
+        local wc = wrapper:FindFirstChildOfClass("UICorner")
         if self._enlarged then
             self._preFS_sz  = wrapper.Size
             self._preFS_pos = wrapper.Position
@@ -388,11 +395,15 @@ function UI:Window(opts)
             local inset = game:GetService("GuiService"):GetGuiInset()
             wrapper.Size     = UDim2.new(0, vp.X, 0, vp.Y - inset.Y)
             wrapper.Position = UDim2.new(0, 0, 0, 0)
+            -- Remove rounding so the UI reaches every edge with no gap
+            if wc then wc.CornerRadius = UDim.new(0, 0) end
             enlargeBtn.Text  = "-"
             if self._resizeBtn then self._resizeBtn.Visible = false end
         else
             wrapper.Size     = self._preFS_sz  or normSz
             wrapper.Position = self._preFS_pos or normPos
+            -- Restore rounded corners
+            if wc then wc.CornerRadius = UDim.new(0, 13) end
             enlargeBtn.Text  = "+"
             if self._resizeBtn then self._resizeBtn.Visible = self._visible end
         end
