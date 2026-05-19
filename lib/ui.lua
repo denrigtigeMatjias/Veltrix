@@ -227,10 +227,30 @@ function UI:Window(opts)
     local BG   = 8    -- gap between dots
     local ctrlW = BS * 3 + BG * 2  -- = 55 px
 
-    -- macOS-inspired palette
-    local TL_MIN   = Color3.fromRGB(255, 189, 46)   -- yellow  (minimize)
-    local TL_MAX   = Color3.fromRGB(52,  199, 89)   -- green   (fullscreen)
-    local TL_CLOSE = Color3.fromRGB(255, 95,  87)   -- red     (close)
+    -- ── Icon loader ──────────────────────────────────────────────────────────
+    -- Downloads each PNG from GitHub once, caches to the executor workspace,
+    -- then returns a Roblox content ID via getcustomasset.
+    -- Returns "" if the executor lacks file APIs; caller falls back to text.
+    local ICON_BASE = "https://raw.githubusercontent.com/denrigtigeMatjias/Veltrix/main/icons/"
+    local function loadIcon(name)
+        local fname = "veltrix_icon_" .. name .. ".png"
+        if not (isfile and isfile(fname)) then
+            local ok, data = pcall(function()
+                return game:HttpGet(ICON_BASE .. name .. ".png")
+            end)
+            if ok and data and writefile then
+                pcall(writefile, fname, data)
+            end
+        end
+        if getcustomasset and isfile and isfile(fname) then
+            return getcustomasset(fname)
+        end
+        return ""
+    end
+
+    local iconMin   = loadIcon("minimize")
+    local iconMax   = loadIcon("fullscreen")
+    local iconClose = loadIcon("close")
 
     local ctrlFrame = mk("Frame", {
         Size = UDim2.new(0, ctrlW, 0, BS),
@@ -239,33 +259,48 @@ function UI:Window(opts)
     }, hdr)
     lst(ctrlFrame, Enum.FillDirection.Horizontal, BG)
 
-    local function trafficBtn(baseCol, sym)
-        -- Icon is always visible; background darkens slightly on hover.
+    -- Plain icon button — no coloured dot background.
+    -- Icon is shown at full colour; on hover a subtle card tint appears behind it.
+    -- Falls back to a Unicode glyph if getcustomasset is unavailable.
+    local function trafficBtn(iconId, fallback)
         local b = mk("TextButton", {
             Size = UDim2.new(0, BS, 0, BS),
-            BackgroundColor3 = baseCol,
-            Text = sym, Font = Enum.Font.GothamBold, TextSize = 9,
-            -- Dark-tinted version of the button colour so the icon reads on the dot
-            TextColor3 = baseCol:Lerp(Color3.new(0,0,0), .55),
+            BackgroundTransparency = 1,
+            Text = iconId == "" and fallback or "",
+            Font = Enum.Font.GothamBold, TextSize = 9,
+            TextColor3 = C.muted,
             BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 5,
         }, ctrlFrame)
         rnd(b, 99)
-        b.MouseEnter:Connect(function()
-            tw(b, {BackgroundColor3 = baseCol:Lerp(Color3.new(0,0,0), .18)}, .1)
-        end)
-        b.MouseLeave:Connect(function()
-            tw(b, {BackgroundColor3 = baseCol}, .1)
-        end)
+        if iconId ~= "" then
+            local img = mk("ImageLabel", {
+                Size = UDim2.new(1,0,1,0),
+                BackgroundTransparency = 1,
+                Image = iconId,
+                ImageColor3 = C.muted,   -- muted at rest, brightens on hover
+                ZIndex = 6,
+            }, b)
+            b.MouseEnter:Connect(function()
+                tw(b,   {BackgroundColor3 = C.card2}, .1)
+                tw(img, {ImageColor3 = C.text}, .1)
+                b.BackgroundTransparency = 0
+            end)
+            b.MouseLeave:Connect(function()
+                tw(b, {BackgroundColor3 = C.bg}, .1)
+                tw(img, {ImageColor3 = C.muted}, .1)
+                task.delay(.12, function() b.BackgroundTransparency = 1 end)
+            end)
+        else
+            -- Text fallback hover
+            b.MouseEnter:Connect(function() tw(b, {TextColor3 = C.text}, .1) end)
+            b.MouseLeave:Connect(function() tw(b, {TextColor3 = C.muted}, .1) end)
+        end
         return b
     end
 
-    -- Unicode icons match standard window-control glyphs:
-    --   — thin horizontal bar (minimize / collapse)
-    --   □ empty square        (fullscreen / restore)
-    --   ✕ multiplication sign (close)
-    local minBtn     = trafficBtn(TL_MIN,   "—")
-    local enlargeBtn = trafficBtn(TL_MAX,   "□")
-    local closeBtn   = trafficBtn(TL_CLOSE, "✕")
+    local minBtn     = trafficBtn(iconMin,   "—")
+    local enlargeBtn = trafficBtn(iconMax,   "□")
+    local closeBtn   = trafficBtn(iconClose, "✕")
 
     mk("Frame", {
         Size = UDim2.new(1,0,0,1), Position = UDim2.new(0,0,1,-1),
