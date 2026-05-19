@@ -1673,7 +1673,7 @@ end
 --  SETTINGS TAB
 -- =============================================================================
 function UI:SettingsTab()
-    local tab = self:Tab("Settings", "")
+    local tab = self:Tab("Settings", UI.loadIcon("settings"))
     local win = self
 
     local ui = tab:Segment("Interface")
@@ -1725,7 +1725,7 @@ end
 --  CONFIG TAB
 -- =============================================================================
 function UI:ConfigTab()
-    local tab = self:Tab("Config", "")
+    local tab = self:Tab("Config", UI.loadIcon("config"))
     local seg = tab:Segment("Save & Load")
     local DIR = "veltrix_configs/"
 
