@@ -171,7 +171,7 @@ function UI:Window(opts)
     local normPos = UDim2.new(.5, -(WW+2)/2, .5, -(WH+2)/2)
 
     local wrapper = mk("Frame", {
-        Size = normSz, Position = normPos,
+        Size = normSz, Position = normPos, BackgroundTransparency = 1,
         BackgroundColor3 = C.border, BorderSizePixel = 0, ZIndex = 2,
         ClipsDescendants = true,
     }, gui)
@@ -186,7 +186,7 @@ function UI:Window(opts)
     -- (ClipsDescendants + UICorner r=13). Frame clips its children to a rectangle;
     -- wrapper then clips the whole lot to the rounded shape. One reliable clip layer.
     local frame = mk("Frame", {
-        Size = UDim2.new(1,-2,1,-2), Position = UDim2.new(0,1,0,1), BackgroundTransparency = 1,
+        Size = UDim2.new(1,-2,1,-2), Position = UDim2.new(0,1,0,1),
         BackgroundColor3 = C.bg, BorderSizePixel = 0, ClipsDescendants = true, ZIndex = 2,
     }, wrapper)
     self._frame = frame
