@@ -263,15 +263,17 @@ function UI:Window(opts)
     -- Icon is shown at full colour; on hover a subtle card tint appears behind it.
     -- Falls back to a Unicode glyph if getcustomasset is unavailable.
     local function trafficBtn(iconId, fallback)
+        -- BackgroundColor3 = C.bg (same as the header) with Transparency = 0
+        -- avoids the faint hover highlight Roblox renders on transparent TextButtons.
+        -- No UICorner needed since there is no visible background.
         local b = mk("TextButton", {
             Size = UDim2.new(0, BS, 0, BS),
-            BackgroundTransparency = 1,
+            BackgroundColor3 = C.bg, BackgroundTransparency = 0,
             Text = iconId == "" and fallback or "",
             Font = Enum.Font.GothamBold, TextSize = 9,
             TextColor3 = C.muted,
             BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 5,
         }, ctrlFrame)
-        rnd(b, 99)
         if iconId ~= "" then
             local img = mk("ImageLabel", {
                 Size = UDim2.new(1,0,1,0),
