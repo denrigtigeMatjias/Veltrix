@@ -1278,13 +1278,16 @@ function Segment:ColorPicker(name, opts, cb)
         local ap = swatch.AbsolutePosition
         local as = swatch.AbsoluteSize
         local vp = workspace.CurrentCamera.ViewportSize
-        local PW = 180
+        -- PW = SV + 20 so the 10px left/right padding fills exactly to the SV box edges.
+        -- PH = 10(top) + SV(152) + 8(gap) + 12(hue) + 6(gap) + 22(hex) + 10(bottom) = 220
+        local PW = SV + 20   -- 172
+        local PH = 220
         local px = math.clamp(ap.X + as.X - PW, 4, vp.X - PW - 4)
         local py = ap.Y + as.Y + 6
-        if py + 234 > vp.Y then py = ap.Y - 234 - 6 end
+        if py + PH > vp.Y then py = ap.Y - PH - 6 end
 
         pickerFr = mk("Frame", {
-            Size=UDim2.new(0,PW,0,234), Position=UDim2.new(0,px,0,py),
+            Size=UDim2.new(0,PW,0,PH), Position=UDim2.new(0,px,0,py),
             BackgroundColor3=C.card, BorderSizePixel=0, ZIndex=60,
         }, self._win._gui)
         rnd(pickerFr, 10); bdr(pickerFr, C.border, 1)
