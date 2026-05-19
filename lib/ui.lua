@@ -271,10 +271,10 @@ function UI:Window(opts)
 
     -- User card
     local uCard = mk("Frame", {
-        Size = UDim2.new(1,0,0,76),
+        Size = UDim2.new(1,0,0,68),
         BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 4,
     }, sidebar)
-    pad(uCard, 12,10,0,12)
+    pad(uCard, 10,10,0,12)
 
     local avWrap = mk("Frame", {
         Size = UDim2.new(0,34,0,34), BackgroundColor3 = C.border,
@@ -327,15 +327,15 @@ function UI:Window(opts)
     end
 
     mk("Frame", {
-        Size = UDim2.new(1,-20,0,1), Position = UDim2.new(0,10,0,76),
+        Size = UDim2.new(1,-20,0,1), Position = UDim2.new(0,10,0,68),
         BackgroundColor3 = C.border, BorderSizePixel = 0, ZIndex = 4,
     }, sidebar)
 
     local tabList = mk("Frame", {
-        Size = UDim2.new(1,0,1,-84), Position = UDim2.new(0,0,0,84),
+        Size = UDim2.new(1,0,1,-76), Position = UDim2.new(0,0,0,76),
         BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 4,
     }, sidebar)
-    pad(tabList, 4,6,6,6)
+    pad(tabList, 6,6,6,6)
     lst(tabList, Enum.FillDirection.Vertical, 2)
     self._tabList = tabList
 
@@ -663,15 +663,50 @@ end
 -- =============================================================================
 function UI:Tab(name, icon)
     local td = setmetatable({ _name = name, _win = self }, { __index = Tab })
+
+    -- Container button — no text; all content is in child labels so we can
+    -- independently tween the accent bar and label colour.
     local tabBtn = mk("TextButton", {
-        Size = UDim2.new(1,0,0,30), BackgroundColor3 = C.bg,
-        Text = (icon and (icon.."  ") or "") .. name,
-        TextColor3 = C.muted, Font = Enum.Font.Gotham, TextSize = 12,
-        BorderSizePixel = 0, AutoButtonColor = false,
-        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 5,
+        Size = UDim2.new(1,0,0,34), BackgroundColor3 = C.sidebar,
+        Text = "", BorderSizePixel = 0, AutoButtonColor = false,
+        ZIndex = 5, ClipsDescendants = true,
     }, self._tabList)
-    rnd(tabBtn, 7); pad(tabBtn, 0,8,0,10)
+    rnd(tabBtn, 7)
+
+    -- 3-px rounded left bar — visible only when the tab is active
+    local tabBar = mk("Frame", {
+        Size = UDim2.new(0,3,1,-12), Position = UDim2.new(0,4,0,6),
+        BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 7,
+        Visible = false,
+    }, tabBtn)
+    rnd(tabBar, 99)
+
+    -- Icon + name label, offset right so it never overlaps the accent bar
+    local tabLbl = lbl(
+        (icon and (icon .. "  ") or "") .. name,
+        C.muted, 12, Enum.Font.Gotham, tabBtn, {
+            Size = UDim2.new(1,-14,1,0), Position = UDim2.new(0,14,0,0),
+            ZIndex = 6,
+        }
+    )
+
+    -- Hover: subtle background lift and slightly brighter text (skipped when active)
+    tabBtn.MouseEnter:Connect(function()
+        if self._activeTab ~= td then
+            tw(tabBtn, {BackgroundColor3 = C.card},  .1)
+            tw(tabLbl, {TextColor3       = C.sub},   .1)
+        end
+    end)
+    tabBtn.MouseLeave:Connect(function()
+        if self._activeTab ~= td then
+            tw(tabBtn, {BackgroundColor3 = C.sidebar}, .1)
+            tw(tabLbl, {TextColor3       = C.muted},   .1)
+        end
+    end)
+
     td._btn = tabBtn
+    td._bar = tabBar
+    td._lbl = tabLbl
 
     local scroll = mk("ScrollingFrame", {
         Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -693,10 +728,16 @@ function UI:_selectTab(t)
     self._activeTab = t
     for _, tab in ipairs(self._tabs) do
         local a = (tab == t)
-        tab._btn.BackgroundColor3 = a and C.border  or C.bg
-        tab._btn.TextColor3       = a and C.text    or C.muted
-        tab._btn.Font             = a and Enum.Font.GothamBold or Enum.Font.Gotham
-        tab._scroll.Visible       = a
+        -- Background: card2 when active (slightly elevated), sidebar when idle
+        tw(tab._btn, { BackgroundColor3 = a and C.card2 or C.sidebar }, .12)
+        -- Label: full text colour + bold when active, muted + regular when idle
+        if tab._lbl then
+            tw(tab._lbl, { TextColor3 = a and C.text or C.muted }, .12)
+            tab._lbl.Font = a and Enum.Font.GothamBold or Enum.Font.Gotham
+        end
+        -- Accent bar: simply show/hide (no tween needed — bar is tiny)
+        if tab._bar then tab._bar.Visible = a end
+        tab._scroll.Visible = a
     end
 end
 
