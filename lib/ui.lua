@@ -109,14 +109,28 @@ end
 local ICON_BASE = "https://raw.githubusercontent.com/denrigtigeMatjias/Veltrix/main/icons/"
 function UI.loadIcon(name)
     local fname = "veltrix_icon_" .. name .. ".png"
-    if not (isfile and isfile(fname)) then
+
+    -- Check if we need to (re-)download:
+    -- • file doesn't exist yet, OR
+    -- • file exists but is empty (stale zero-byte from a previous failed download)
+    local fileOk = isfile and isfile(fname)
+    if fileOk and readfile then
+        local ok, content = pcall(readfile, fname)
+        if not ok or type(content) ~= "string" or #content == 0 then
+            fileOk = false   -- treat as missing — force re-download
+        end
+    end
+
+    if not fileOk then
         local ok, data = pcall(function()
             return game:HttpGet(ICON_BASE .. name .. ".png")
         end)
-        if ok and data and writefile then
+        -- Only write if we actually got bytes back (not an empty error response)
+        if ok and type(data) == "string" and #data > 100 and writefile then
             pcall(writefile, fname, data)
         end
     end
+
     if getcustomasset and isfile and isfile(fname) then
         return getcustomasset(fname)
     end
@@ -613,7 +627,13 @@ function UI:Notify(opts)
 
     -- ── Icons — load each time (UI.loadIcon caches at disk level, so after the
     -- first download repeated calls are instant; no stale-empty-string risk)
-    local iconId  = (ntype == "success") and UI.loadIcon("check") or UI.loadIcon("information")
+    local typeIcon = {
+        success = "check",
+        info    = "information",
+        warning = "warning",
+        error   = "information",
+    }
+    local iconId  = UI.loadIcon(typeIcon[ntype] or "information")
     local closeId = UI.loadIcon("close")
 
     -- ── Measurements  (direct port of notif-prototype.html) ──────────────────
