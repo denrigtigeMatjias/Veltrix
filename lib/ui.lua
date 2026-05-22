@@ -102,39 +102,38 @@ local function guiParent()
     return lp:WaitForChild("PlayerGui")
 end
 
--- UI.loadIcon(name) — downloads a PNG from the Veltrix icons repo once,
--- caches it in the executor workspace, and returns a Roblox content ID.
--- Returns "" if the executor lacks file-system APIs (getcustomasset/writefile).
+-- UI.loadIcon(name) — fetches a PNG from the Veltrix icons repo and returns a
+-- Roblox content ID. Returns "" if the executor lacks file-system APIs.
+--
+-- Caching strategy: fresh download ONCE per script run, then kept in memory.
+-- We deliberately do NOT trust the on-disk copy across runs — otherwise an
+-- updated icon on GitHub would be permanently masked by a stale local file.
+-- Re-downloading once per session picks up icon changes on the next execution
+-- while avoiding repeat downloads within the same session.
 -- Call from any script: local id = UI.loadIcon("combat")
-local ICON_BASE = "https://raw.githubusercontent.com/denrigtigeMatjias/Veltrix/main/icons/"
+local ICON_BASE  = "https://raw.githubusercontent.com/denrigtigeMatjias/Veltrix/main/icons/"
+local _iconCache = {}   -- name -> content ID, per session (cleared on each run)
 function UI.loadIcon(name)
+    if _iconCache[name] ~= nil then return _iconCache[name] end
+
     local fname = "veltrix_icon_" .. name .. ".png"
 
-    -- Check if we need to (re-)download:
-    -- • file doesn't exist yet, OR
-    -- • file exists but is empty (stale zero-byte from a previous failed download)
-    local fileOk = isfile and isfile(fname)
-    if fileOk and readfile then
-        local ok, content = pcall(readfile, fname)
-        if not ok or type(content) ~= "string" or #content == 0 then
-            fileOk = false   -- treat as missing — force re-download
-        end
+    -- Always fetch the latest copy and overwrite any stale local file.
+    local ok, data = pcall(function()
+        return game:HttpGet(ICON_BASE .. name .. ".png")
+    end)
+    if ok and type(data) == "string" and #data > 100 and writefile then
+        pcall(writefile, fname, data)
     end
 
-    if not fileOk then
-        local ok, data = pcall(function()
-            return game:HttpGet(ICON_BASE .. name .. ".png")
-        end)
-        -- Only write if we actually got bytes back (not an empty error response)
-        if ok and type(data) == "string" and #data > 100 and writefile then
-            pcall(writefile, fname, data)
-        end
-    end
-
+    local id = ""
     if getcustomasset and isfile and isfile(fname) then
-        return getcustomasset(fname)
+        local ok2, asset = pcall(getcustomasset, fname)
+        if ok2 and type(asset) == "string" then id = asset end
     end
-    return ""
+
+    _iconCache[name] = id
+    return id
 end
 
 -- Dragging: moves `target` (wrapper) via absolute position so initial centering
@@ -717,45 +716,41 @@ function UI:Notify(opts)
         ZIndex           = 501,
     }, card)
 
-    -- Circle outline — opaque background (same colour as card) so UIStroke is
-    -- guaranteed to render even if the executor has limited GUI support.
-    local circ = mk("Frame", {
-        Size             = UDim2.new(1, 0, 1, 0),
-        BackgroundColor3 = Color3.fromRGB(16, 18, 28),
-        BorderSizePixel  = 0,
-        ZIndex           = 502,
-    }, iconBox)
-    rnd(circ, 99)
-    bdr(circ, accent, 1.4)
-
-    -- Glyph inside the circle — fallback that mirrors the SVG <symbol> icons in
-    -- the HTML. Always rendered underneath the PNG. Because both the glyph and the
-    -- PNG overlay use the SAME accent colour, any overlap is seamless: when the PNG
-    -- renders you see it, when it doesn't (some PNGs don't show at 15px) the glyph
-    -- shows through. Either way the icon is always visible and correctly coloured.
-    local glyphs = { success = "✓", info = "i", warning = "!", error = "✕" }
-    mk("TextLabel", {
-        Size                 = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text                 = glyphs[ntype] or "i",
-        TextColor3           = accent,
-        Font                 = Enum.Font.GothamBold,
-        TextSize             = ntype == "success" and 8 or 9,
-        TextXAlignment       = Enum.TextXAlignment.Center,
-        TextYAlignment       = Enum.TextYAlignment.Center,
-        ZIndex               = 503,
-    }, iconBox)
-
-    -- PNG overlay — tinted with accent so it matches the glyph colour exactly.
-    -- Sits on top of the circle+glyph; if the image renders it replaces the glyph
-    -- visually, if it doesn't the glyph remains visible underneath.
+    -- Icon: use the PNG when it loaded, otherwise fall back to a glyph that mirrors
+    -- the SVG <symbol> icons in the HTML. Only ONE element is ever created — no
+    -- circle frame behind it (that was rendering as a box) and no layering.
     if iconId ~= "" then
+        -- PNG loaded — tint with accent to match the card's colour scheme.
+        -- The PNG already includes its own circle design, so nothing sits behind it.
         mk("ImageLabel", {
             Size                 = UDim2.new(1, 0, 1, 0),
             BackgroundTransparency = 1,
             Image                = iconId,
             ImageColor3          = accent,
-            ZIndex               = 504,
+            ZIndex               = 502,
+        }, iconBox)
+    else
+        -- PNG unavailable — draw a circle outline + matching glyph (HTML SVG look)
+        local ring = mk("Frame", {
+            Size                 = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,   -- no fill, just the stroke outline
+            BorderSizePixel      = 0,
+            ZIndex               = 502,
+        }, iconBox)
+        rnd(ring, 999)
+        bdr(ring, accent, 1.4)
+
+        local glyphs = { success = "✓", info = "i", warning = "!", error = "✕" }
+        mk("TextLabel", {
+            Size                 = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            Text                 = glyphs[ntype] or "i",
+            TextColor3           = accent,
+            Font                 = Enum.Font.GothamBold,
+            TextSize             = ntype == "success" and 8 or 9,
+            TextXAlignment       = Enum.TextXAlignment.Center,
+            TextYAlignment       = Enum.TextYAlignment.Center,
+            ZIndex               = 503,
         }, iconBox)
     end
 
