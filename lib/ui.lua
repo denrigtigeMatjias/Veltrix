@@ -672,71 +672,72 @@ function UI:Notify(opts)
     }, wrapper)
     rnd(card, 9)
 
-    -- Left accent strip — full card height, accent colour
-    -- Matches .notif::before (border-radius:99px on left side only; we use rnd(99)
-    -- which rounds all corners, but at 3 px wide the right corners are invisible)
-    local strip = mk("Frame", {
+    -- Left accent strip — only the LEFT side rounded (.notif::before border-radius:99px 0 0 99px)
+    -- Trick: clip holder is exactly STRIP px wide; inner strip is wider so UICorner(10)
+    -- rounds the left corners visibly while the right corners are hidden by the clip.
+    local stripHolder = mk("Frame", {
         Size             = UDim2.new(0, STRIP, 1, 0),
         Position         = UDim2.new(0, 0, 0, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel  = 0,
+        ZIndex           = 501,
+        ClipsDescendants = true,
+    }, card)
+    local strip = mk("Frame", {
+        Size             = UDim2.new(0, STRIP + 10, 1, 0),
         BackgroundColor3 = accent,
         BorderSizePixel  = 0,
         ZIndex           = 501,
-    }, card)
-    rnd(strip, 99)
+    }, stripHolder)
+    rnd(strip, 10)
 
     -- ── Icon — PNG if available, otherwise circle + glyph (always visible) ───
     local bodyH = NH - 2 - PT - PB          -- usable height inside body (no bar)
     local iconY = PT + math.floor((bodyH - IW) / 2)   -- vertically centred
 
+    -- Icon container — fixed position regardless of whether PNG loads
+    local iconBox = mk("Frame", {
+        Size             = UDim2.new(0, IW, 0, IW),
+        Position         = UDim2.new(0, PL, 0, iconY),
+        BackgroundTransparency = 1,
+        BorderSizePixel  = 0,
+        ZIndex           = 501,
+    }, card)
+
+    -- Circle outline — opaque background (same colour as card) so UIStroke is
+    -- guaranteed to render even if the executor has limited GUI support.
+    local circ = mk("Frame", {
+        Size             = UDim2.new(1, 0, 1, 0),
+        BackgroundColor3 = Color3.fromRGB(16, 18, 28),
+        BorderSizePixel  = 0,
+        ZIndex           = 502,
+    }, iconBox)
+    rnd(circ, 99)
+    bdr(circ, accent, 1.4)
+
+    -- Glyph inside the circle (mirrors SVG symbol content)
+    local glyphs = { success = "✓", info = "i", warning = "!", error = "✕" }
+    mk("TextLabel", {
+        Size                 = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text                 = glyphs[ntype] or "i",
+        TextColor3           = accent,
+        Font                 = Enum.Font.GothamBold,
+        TextSize             = ntype == "success" and 8 or 9,
+        TextXAlignment       = Enum.TextXAlignment.Center,
+        TextYAlignment       = Enum.TextYAlignment.Center,
+        ZIndex               = 503,
+    }, iconBox)
+
+    -- If the PNG icon loaded, overlay it on top (covers the circle+glyph)
     if iconId ~= "" then
-        -- PNG loaded — render as tinted ImageLabel (matches .notif-icon)
         mk("ImageLabel", {
-            Size                 = UDim2.new(0, IW, 0, IW),
-            Position             = UDim2.new(0, PL, 0, iconY),
+            Size                 = UDim2.new(1, 0, 1, 0),
             BackgroundTransparency = 1,
             Image                = iconId,
             ImageColor3          = accent,
-            ZIndex               = 502,
-        }, card)
-    else
-        -- Fallback: draw circle outline + glyph  (mirrors the SVG symbols in the HTML)
-        local glyphs = { success="✓", info="i", warning="!", error="✕" }
-        local glyph  = glyphs[ntype] or "i"
-
-        local iconFrame = mk("Frame", {
-            Size             = UDim2.new(0, IW, 0, IW),
-            Position         = UDim2.new(0, PL, 0, iconY),
-            BackgroundTransparency = 1,
-            BorderSizePixel  = 0,
-            ZIndex           = 502,
-        }, card)
-
-        -- Circle (mimics the <circle> stroke in the SVG)
-        local circle = mk("Frame", {
-            Size             = UDim2.new(1, 0, 1, 0),
-            BackgroundTransparency = 1,
-            BorderSizePixel  = 0,
-            ZIndex           = 502,
-        }, iconFrame)
-        rnd(circle, 99)
-        mk("UIStroke", {
-            Color            = accent,
-            Thickness        = 1.4,
-            ApplyStrokeMode  = Enum.ApplyStrokeMode.Border,
-        }, circle)
-
-        -- Glyph inside
-        mk("TextLabel", {
-            Size                 = UDim2.new(1, 0, 1, 0),
-            BackgroundTransparency = 1,
-            Text                 = glyph,
-            TextColor3           = accent,
-            Font                 = Enum.Font.GothamBold,
-            TextSize             = ntype == "success" and 8 or 9,
-            TextXAlignment       = Enum.TextXAlignment.Center,
-            TextYAlignment       = Enum.TextYAlignment.Center,
-            ZIndex               = 503,
-        }, iconFrame)
+            ZIndex               = 504,
+        }, iconBox)
     end
 
     -- ── Text column ───────────────────────────────────────────────────────────
