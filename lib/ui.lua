@@ -611,90 +611,102 @@ function UI:Notify(opts)
         warning = C.yellow,
         error   = C.red,
     }
-    local accent  = typeAccent[ntype] or C.blue
-    local hasMsg  = message ~= ""
-    local NW      = 300
-    local NH      = hasMsg and 68 or 44
-    local PAD     = 14
+    local accent = typeAccent[ntype] or C.blue
+    local hasMsg = message ~= ""
+
+    -- Measurements (direct translation from notif-prototype.html)
+    local NW   = 300   -- width:  300px
+    local NH   = hasMsg and 66 or 42  -- height: flex content (~12px top pad + body + 2px bar)
+    local PL   = 20    -- padding-left (body): 3px strip + 17px
+    local PR   = 14    -- padding-right
+    local PT   = 12    -- padding-top
+    local GAP  = 9     -- gap between icon and text
 
     self._notifStack = self._notifStack or {}
 
     for _, e in ipairs(self._notifStack) do
         local cy = e.card.Position.Y.Offset
-        tw(e.card, { Position = UDim2.new(1, -NW-16, 1, cy - NH - 6) }, .18)
+        tw(e.card, { Position = UDim2.new(1, -NW-16, 1, cy - NH - 8) }, .18)
     end
 
-    -- ── Card ─────────────────────────────────────────────────────────────────
+    -- ── Card  (background: #10121c, border: C.border, r:10) ──────────────────
     local card = mk("Frame", {
         Size     = UDim2.new(0, NW, 0, NH),
         Position = UDim2.new(1, NW + 20, 1, -NH - 16),
-        BackgroundColor3 = Color3.fromRGB(16, 18, 27),
+        BackgroundColor3 = Color3.fromRGB(16, 18, 28),
         BorderSizePixel  = 0, ZIndex = 500,
         ClipsDescendants = true,
     }, self._gui)
     rnd(card, 10)
     bdr(card, C.border, 1)
 
-    -- 3px left accent strip (flush to card left edge, rounded on right)
+    -- notif::before — 3px left strip, accent colour, border-radius: 99px
     local strip = mk("Frame", {
         Size = UDim2.new(0, 3, 1, 0), Position = UDim2.new(0, 0, 0, 0),
         BackgroundColor3 = accent, BorderSizePixel = 0, ZIndex = 501,
     }, card)
-    mk("UICorner", { CornerRadius = UDim.new(0, 99) }, strip)
+    rnd(strip, 99)
 
-    -- ── Icon (notification.png, no box — just the image in accent colour) ─────
+    -- ── .notif-body  (flex row, align-items:center, gap:9, padding as above) ──
+
+    -- .notif-icon  (15×15, accent tint, no background)
     local notifIconId = UI.loadIcon("notification")
-    local iconX = PAD + 3   -- 3 = strip width
+    local ICON_W = 15
     if notifIconId ~= "" then
         mk("ImageLabel", {
-            Size     = UDim2.new(0, 14, 0, 14),
-            Position = UDim2.new(0, iconX, 0.5, -7),
+            Size     = UDim2.new(0, ICON_W, 0, ICON_W),
+            Position = UDim2.new(0, PL, 0.5, -math.floor(ICON_W/2)),
             BackgroundTransparency = 1,
             Image = notifIconId, ImageColor3 = accent, ZIndex = 501,
         }, card)
     end
-    local TX = notifIconId ~= "" and (iconX + 14 + 7) or (iconX)
-    local TW = NW - TX - PAD - 20
 
-    -- ── Text ─────────────────────────────────────────────────────────────────
+    -- .notif-text  (flex:1, starts after icon+gap)
+    local TX = notifIconId ~= "" and (PL + ICON_W + GAP) or PL
+    -- leave 14px for close btn + PR
+    local TW = NW - TX - PR - 14
+
+    -- .notif-title  (12px, 700, C.text)
     lbl(title, C.text, 12, Enum.Font.GothamBold, card, {
         Size     = UDim2.new(0, TW, 0, 15),
-        Position = UDim2.new(0, TX, 0, hasMsg and 12 or (NH / 2 - 7)),
+        Position = UDim2.new(0, TX, 0, hasMsg and PT or (NH/2 - 7) - 1),
         ZIndex   = 501, TextXAlignment = Enum.TextXAlignment.Left,
     })
 
+    -- .notif-message  (10.5px → 10px, C.sub, margin-top:3)
     if hasMsg then
         lbl(message, C.sub, 10, Enum.Font.Gotham, card, {
-            Size     = UDim2.new(0, TW + PAD, 0, 26),
-            Position = UDim2.new(0, TX, 0, 31),
+            Size     = UDim2.new(0, TW + PR, 0, 24),
+            Position = UDim2.new(0, TX, 0, PT + 15 + 3),
             ZIndex   = 501, TextWrapped = true,
             TextXAlignment = Enum.TextXAlignment.Left,
         })
     end
 
-    -- ── Close button ──────────────────────────────────────────────────────────
+    -- .notif-close  (14×14, opacity:.35 → C.muted, hover → C.text)
+    --   align-self: flex-start, margin-top: 1px  → absolute top-right
     local closeIconId = UI.loadIcon("close")
     local xBtn = mk("TextButton", {
-        Size     = UDim2.new(0, 12, 0, 12),
-        Position = UDim2.new(1, -18, 0, 9),
+        Size     = UDim2.new(0, 14, 0, 14),
+        Position = UDim2.new(1, -(PR + 14), 0, PT - 1),
         BackgroundTransparency = 1,
-        Text     = closeIconId == "" and "✕" or "",
+        Text = closeIconId == "" and "✕" or "",
         TextColor3 = C.muted, Font = Enum.Font.GothamBold, TextSize = 9,
         BorderSizePixel = 0, ZIndex = 502, AutoButtonColor = false,
     }, card)
     if closeIconId ~= "" then
         local xImg = mk("ImageLabel", {
-            Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1,
+            Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1,
             Image = closeIconId, ImageColor3 = C.muted, ZIndex = 503,
         }, xBtn)
-        xBtn.MouseEnter:Connect(function() tw(xImg, { ImageColor3 = C.text }, .1) end)
-        xBtn.MouseLeave:Connect(function() tw(xImg, { ImageColor3 = C.muted }, .1) end)
+        xBtn.MouseEnter:Connect(function() tw(xImg, { ImageColor3 = C.text }, .15) end)
+        xBtn.MouseLeave:Connect(function() tw(xImg, { ImageColor3 = C.muted }, .15) end)
     else
-        xBtn.MouseEnter:Connect(function() tw(xBtn, { TextColor3 = C.text }, .1) end)
-        xBtn.MouseLeave:Connect(function() tw(xBtn, { TextColor3 = C.muted }, .1) end)
+        xBtn.MouseEnter:Connect(function() tw(xBtn, { TextColor3 = C.text }, .15) end)
+        xBtn.MouseLeave:Connect(function() tw(xBtn, { TextColor3 = C.muted }, .15) end)
     end
 
-    -- ── Progress bar ──────────────────────────────────────────────────────────
+    -- .notif-bar  (height:2, accent, scaleX 1→0 over duration)
     local bar = mk("Frame", {
         Size = UDim2.new(1, 0, 0, 2), Position = UDim2.new(0, 0, 1, -2),
         BackgroundColor3 = accent, BorderSizePixel = 0, ZIndex = 501,
@@ -703,6 +715,7 @@ function UI:Notify(opts)
     local entry = { card = card, h = NH }
     table.insert(self._notifStack, entry)
 
+    -- slide in (Back.Out, 0.28s)
     tw(card, { Position = UDim2.new(1, -NW-16, 1, -NH-16) }, .28,
         Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 
@@ -715,7 +728,7 @@ function UI:Notify(opts)
         end
         for _, e in ipairs(self._notifStack) do
             local cy = e.card.Position.Y.Offset
-            tw(e.card, { Position = UDim2.new(1, -NW-16, 1, cy + NH + 6) }, .18)
+            tw(e.card, { Position = UDim2.new(1, -NW-16, 1, cy + NH + 8) }, .18)
         end
         tw(card, { Position = UDim2.new(1, NW + 20, 1, card.Position.Y.Offset) }, .2)
         task.delay(.25, function() if card.Parent then card:Destroy() end end)
