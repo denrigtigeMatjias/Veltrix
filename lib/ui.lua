@@ -728,8 +728,8 @@ function UI:Notify(opts)
     rnd(circ, 99)
     bdr(circ, accent, 1.4)
 
-    --[[
-    -- Glyph inside the circle (mirrors SVG symbol content)
+    -- Glyph inside the circle — mirrors the SVG <symbol> icons in the HTML prototype.
+    -- This is the primary icon: always visible, always accent-coloured, zero dependencies.
     local glyphs = { success = "✓", info = "i", warning = "!", error = "✕" }
     mk("TextLabel", {
         Size                 = UDim2.new(1, 0, 1, 0),
@@ -742,19 +742,6 @@ function UI:Notify(opts)
         TextYAlignment       = Enum.TextYAlignment.Center,
         ZIndex               = 503,
     }, iconBox)
-    --]]
-
-    -- If the PNG icon loaded, overlay it on top (covers the circle+glyph).
-    -- No ImageColor3 tinting — icons are white on transparent so they render
-    -- clearly on the dark card without needing a colour multiply.
-    if iconId ~= "" then
-        mk("ImageLabel", {
-            Size                 = UDim2.new(1, 0, 1, 0),
-            BackgroundTransparency = 1,
-            Image                = iconId,
-            ZIndex               = 504,
-        }, iconBox)
-    end
 
     -- ── Text column ───────────────────────────────────────────────────────────
     -- TX always fixed — never shifts regardless of icon-load state
