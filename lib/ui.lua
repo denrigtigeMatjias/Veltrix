@@ -614,13 +614,29 @@ function UI:Notify(opts)
     local accent = typeAccent[ntype] or C.blue
     local hasMsg = message ~= ""
 
-    -- Measurements (direct translation from notif-prototype.html)
-    local NW   = 300   -- width:  300px
-    local NH   = hasMsg and 66 or 42  -- height: flex content (~12px top pad + body + 2px bar)
-    local PL   = 20    -- padding-left (body): 3px strip + 17px
-    local PR   = 14    -- padding-right
-    local PT   = 12    -- padding-top
-    local GAP  = 9     -- gap between icon and text
+    -- Type → icon file (success uses check.png, everything else information.png)
+    local typeIcon = {
+        success = UI.loadIcon("check"),
+        info    = UI.loadIcon("information"),
+        warning = UI.loadIcon("information"),
+        error   = UI.loadIcon("information"),
+    }
+    local iconId = typeIcon[ntype] or UI.loadIcon("information")
+
+    -- Measurements (1:1 with notif-prototype.html)
+    -- .notif: width 300px
+    -- .notif-body padding: 12px(top) 14px(right) 10px(bottom) 20px(left)
+    -- .notif-icon: 15×15  .notif-text gap: 9px
+    -- .notif-message margin-top: 3px, font-size ~10px, line-height 1.45 (~15px/line)
+    -- .notif-bar: height 2px
+    -- NH = PT(12) + title(15) + [msg: mt(3)+line(15)] + PB(10) + bar(2)
+    local NW  = 300
+    local NH  = hasMsg and 57 or 39
+    local PL  = 20   -- padding-left (accounts for 3px strip + 17px gap)
+    local PR  = 14   -- padding-right
+    local PT  = 12   -- padding-top
+    local PB  = 10   -- padding-bottom (above bar)
+    local GAP = 9    -- gap between icon and text block
 
     self._notifStack = self._notifStack or {}
 
@@ -629,7 +645,7 @@ function UI:Notify(opts)
         tw(e.card, { Position = UDim2.new(1, -NW-16, 1, cy - NH - 8) }, .18)
     end
 
-    -- ── Card  (background: #10121c, border: C.border, r:10) ──────────────────
+    -- ── .notif — card ─────────────────────────────────────────────────────────
     local card = mk("Frame", {
         Size     = UDim2.new(0, NW, 0, NH),
         Position = UDim2.new(1, NW + 20, 1, -NH - 16),
@@ -640,43 +656,44 @@ function UI:Notify(opts)
     rnd(card, 10)
     bdr(card, C.border, 1)
 
-    -- notif::before — 3px left strip, accent colour, border-radius: 99px
+    -- .notif::before — 3px left strip, accent, border-radius:99px
     local strip = mk("Frame", {
         Size = UDim2.new(0, 3, 1, 0), Position = UDim2.new(0, 0, 0, 0),
         BackgroundColor3 = accent, BorderSizePixel = 0, ZIndex = 501,
     }, card)
     rnd(strip, 99)
 
-    -- ── .notif-body  (flex row, align-items:center, gap:9, padding as above) ──
+    -- ── .notif-body ───────────────────────────────────────────────────────────
 
-    -- .notif-icon  (15×15, accent tint, no background)
-    local notifIconId = UI.loadIcon("notification")
-    local ICON_W = 15
-    if notifIconId ~= "" then
+    -- .notif-icon — 15×15, accent tint, no background, vertically centred in body
+    -- body top = PT, body bottom = NH-2(bar), centre = PT + (NH-2-PT-PB)/2
+    local ICON_W  = 15
+    local bodyH   = NH - 2 - PT - PB          -- inner body height (no bar/padding)
+    local iconY   = PT + math.floor((bodyH - ICON_W) / 2)
+    if iconId ~= "" then
         mk("ImageLabel", {
             Size     = UDim2.new(0, ICON_W, 0, ICON_W),
-            Position = UDim2.new(0, PL, 0.5, -math.floor(ICON_W/2)),
+            Position = UDim2.new(0, PL, 0, iconY),
             BackgroundTransparency = 1,
-            Image = notifIconId, ImageColor3 = accent, ZIndex = 501,
+            Image = iconId, ImageColor3 = accent, ZIndex = 501,
         }, card)
     end
 
-    -- .notif-text  (flex:1, starts after icon+gap)
-    local TX = notifIconId ~= "" and (PL + ICON_W + GAP) or PL
-    -- leave 14px for close btn + PR
-    local TW = NW - TX - PR - 14
+    -- .notif-text — starts after icon + gap
+    local TX = iconId ~= "" and (PL + ICON_W + GAP) or PL
+    local TW = NW - TX - PR - 18   -- 18 = close btn width + small gap
 
-    -- .notif-title  (12px, 700, C.text)
+    -- .notif-title — 12px bold, C.text
     lbl(title, C.text, 12, Enum.Font.GothamBold, card, {
         Size     = UDim2.new(0, TW, 0, 15),
-        Position = UDim2.new(0, TX, 0, hasMsg and PT or (NH/2 - 7) - 1),
+        Position = UDim2.new(0, TX, 0, PT),
         ZIndex   = 501, TextXAlignment = Enum.TextXAlignment.Left,
     })
 
-    -- .notif-message  (10.5px → 10px, C.sub, margin-top:3)
+    -- .notif-message — 10px, C.sub, margin-top:3
     if hasMsg then
         lbl(message, C.sub, 10, Enum.Font.Gotham, card, {
-            Size     = UDim2.new(0, TW + PR, 0, 24),
+            Size     = UDim2.new(0, TW + PR, 0, 15),
             Position = UDim2.new(0, TX, 0, PT + 15 + 3),
             ZIndex   = 501, TextWrapped = true,
             TextXAlignment = Enum.TextXAlignment.Left,
