@@ -621,22 +621,16 @@ function UI:Notify(opts)
 
     self._notifStack = self._notifStack or {}
 
-    -- Anchor to the window's bottom-right corner
-    local wpos  = self._wrapper.AbsolutePosition
-    local wsz   = self._wrapper.AbsoluteSize
-    local xEnd  = wpos.X + wsz.X - NW - 1   -- flush with window right edge
-    local yBase = wpos.Y + wsz.Y             -- window bottom
-
     -- Shift existing cards upward to make room
     for _, e in ipairs(self._notifStack) do
         local cy = e.card.Position.Y.Offset
-        tw(e.card, { Position = UDim2.new(0, e.card.Position.X.Offset, 0, cy - NH - 8) }, .2)
+        tw(e.card, { Position = UDim2.new(1, -NW-16, 1, cy - NH - 8) }, .2)
     end
 
     -- ── Card ─────────────────────────────────────────────────────────────────
     local card = mk("Frame", {
         Size     = UDim2.new(0, NW, 0, NH),
-        Position = UDim2.new(0, xEnd + NW + 20, 0, yBase - NH - 1),
+        Position = UDim2.new(1, NW + 20, 1, -NH - 16),  -- start off-screen right
         BackgroundColor3 = C.card2, BorderSizePixel = 0, ZIndex = 500,
         ClipsDescendants = true,
     }, self._gui)
@@ -721,8 +715,8 @@ function UI:Notify(opts)
     local entry = { card = card, h = NH }
     table.insert(self._notifStack, entry)
 
-    -- Slide in from the right
-    tw(card, { Position = UDim2.new(0, xEnd, 0, yBase - NH - 1) }, .28,
+    -- Slide in from right
+    tw(card, { Position = UDim2.new(1, -NW-16, 1, -NH-16) }, .28,
         Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 
     local dismissed = false
@@ -734,9 +728,9 @@ function UI:Notify(opts)
         end
         for _, e in ipairs(self._notifStack) do
             local cy = e.card.Position.Y.Offset
-            tw(e.card, { Position = UDim2.new(0, e.card.Position.X.Offset, 0, cy + NH + 8) }, .2)
+            tw(e.card, { Position = UDim2.new(1, -NW-16, 1, cy + NH + 8) }, .2)
         end
-        tw(card, { Position = UDim2.new(0, xEnd + NW + 20, 0, card.Position.Y.Offset) }, .2)
+        tw(card, { Position = UDim2.new(1, NW + 20, 1, card.Position.Y.Offset) }, .2)
         task.delay(.25, function() if card.Parent then card:Destroy() end end)
     end
 
