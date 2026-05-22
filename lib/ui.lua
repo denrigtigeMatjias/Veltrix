@@ -652,7 +652,7 @@ function UI:Notify(opts)
     -- ── Stack management — cap at 4, oldest dismissed automatically ───────────
     self._notifStack = self._notifStack or {}
 
-    if #self._notifStack >= 4 then
+    if #self._notifStack >= 8 then
         local oldest = self._notifStack[1]
         if oldest and oldest._dismiss then oldest._dismiss() end
     end
@@ -741,15 +741,17 @@ function UI:Notify(opts)
         TextXAlignment       = Enum.TextXAlignment.Center,
         TextYAlignment       = Enum.TextYAlignment.Center,
         ZIndex               = 503,
-    }, iconBox)]]
+    }, iconBox)
+    --]]
 
-    -- If the PNG icon loaded, overlay it on top (covers the circle+glyph)
+    -- If the PNG icon loaded, overlay it on top (covers the circle+glyph).
+    -- No ImageColor3 tinting — icons are white on transparent so they render
+    -- clearly on the dark card without needing a colour multiply.
     if iconId ~= "" then
         mk("ImageLabel", {
             Size                 = UDim2.new(1, 0, 1, 0),
             BackgroundTransparency = 1,
             Image                = iconId,
-            ImageColor3          = accent,
             ZIndex               = 504,
         }, iconBox)
     end
