@@ -595,8 +595,7 @@ function UI:_destroy()
 end
 
 -- =============================================================================
---  NOTIFICATIONS  — toast cards that slide in from the right, anchored to the
---  bottom-right corner of the window.
+--  NOTIFICATIONS  — modern toast cards, bottom-right corner of the screen.
 --  opts: { Title, Message, Duration (s), Type = "info"|"success"|"warning"|"error" }
 -- =============================================================================
 function UI:Notify(opts)
@@ -614,81 +613,94 @@ function UI:Notify(opts)
     }
     local accent  = typeAccent[ntype] or C.blue
     local hasMsg  = message ~= ""
-    local NW      = 300
-    local NH      = hasMsg and 80 or 52
-    local PAD     = 12
-    local ICON_SZ = 20
+    local NW      = 320
+    local NH      = hasMsg and 86 or 58
+    local PAD     = 14
+    local ICON_SZ = 34
 
     self._notifStack = self._notifStack or {}
 
-    -- Shift existing cards upward to make room
+    -- Shift existing cards upward
     for _, e in ipairs(self._notifStack) do
         local cy = e.card.Position.Y.Offset
         tw(e.card, { Position = UDim2.new(1, -NW-16, 1, cy - NH - 8) }, .2)
     end
 
     -- ── Card ─────────────────────────────────────────────────────────────────
+    -- Slightly darker than C.card2 for a more "elevated from the bg" feel
     local card = mk("Frame", {
         Size     = UDim2.new(0, NW, 0, NH),
-        Position = UDim2.new(1, NW + 20, 1, -NH - 16),  -- start off-screen right
-        BackgroundColor3 = C.card2, BorderSizePixel = 0, ZIndex = 500,
+        Position = UDim2.new(1, NW + 20, 1, -NH - 16),
+        BackgroundColor3 = Color3.fromRGB(13, 15, 23),
+        BorderSizePixel  = 0, ZIndex = 500,
         ClipsDescendants = true,
     }, self._gui)
-    rnd(card, 10)
+    rnd(card, 12)
     bdr(card, C.border, 1)
 
-    -- 2px accent line at very top
-    mk("Frame", {
-        Size = UDim2.new(1, 0, 0, 2), Position = UDim2.new(0, 0, 0, 0),
-        BackgroundColor3 = accent, BorderSizePixel = 0, ZIndex = 501,
+    -- Left→right accent colour wash (replaces the old left strip — more modern)
+    -- A frame sized to fill the card, coloured with the accent, faded out via
+    -- UIGradient so it washes the left ~45% and vanishes toward the right.
+    local wash = mk("Frame", {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundColor3 = accent, BorderSizePixel = 0, ZIndex = 500,
     }, card)
+    local washGrad = Instance.new("UIGradient")
+    washGrad.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0,    0.82),   -- 18 % opacity on far left
+        NumberSequenceKeypoint.new(0.55, 1),      -- fully gone by mid-card
+        NumberSequenceKeypoint.new(1,    1),
+    })
+    washGrad.Rotation = 0   -- horizontal left → right
+    washGrad.Parent = wash
 
-    -- ── Notification icon (notification.png) ─────────────────────────────────
+    -- ── Icon ─────────────────────────────────────────────────────────────────
     local notifIconId = UI.loadIcon("notification")
     local iconBg = mk("Frame", {
         Size             = UDim2.new(0, ICON_SZ, 0, ICON_SZ),
         Position         = UDim2.new(0, PAD, 0.5, -ICON_SZ / 2),
         BackgroundColor3 = accent,
-        BackgroundTransparency = 0.82,
+        BackgroundTransparency = 0.80,
         BorderSizePixel  = 0, ZIndex = 501,
     }, card)
-    rnd(iconBg, 6)
+    rnd(iconBg, 9)
     if notifIconId ~= "" then
         mk("ImageLabel", {
-            Size = UDim2.new(1, -6, 1, -6), Position = UDim2.new(0, 3, 0, 3),
+            Size     = UDim2.new(0, 18, 0, 18),
+            Position = UDim2.new(0.5, -9, 0.5, -9),
             BackgroundTransparency = 1,
             Image = notifIconId, ImageColor3 = accent, ZIndex = 502,
         }, iconBg)
     else
-        lbl("🔔", C.text, 11, Enum.Font.GothamBold, iconBg, {
-            Size = UDim2.new(1,0,1,0), ZIndex = 502,
+        lbl("🔔", accent, 13, Enum.Font.GothamBold, iconBg, {
+            Size = UDim2.new(1, 0, 1, 0), ZIndex = 502,
         })
     end
 
-    -- ── Text area ─────────────────────────────────────────────────────────────
-    local textX  = PAD + ICON_SZ + 8
-    local textW  = NW - textX - PAD - 22   -- leave room for close btn
+    -- ── Text ─────────────────────────────────────────────────────────────────
+    local TX = PAD + ICON_SZ + 10
+    local TW = NW - TX - PAD - 24
 
-    lbl(title, C.text, 12, Enum.Font.GothamBold, card, {
-        Size     = UDim2.new(0, textW, 0, 15),
-        Position = UDim2.new(0, textX, 0, hasMsg and 16 or (NH / 2 - 8)),
+    lbl(title, C.text, 13, Enum.Font.GothamBold, card, {
+        Size     = UDim2.new(0, TW, 0, 16),
+        Position = UDim2.new(0, TX, 0, hasMsg and 18 or (NH / 2 - 8)),
         ZIndex   = 501, TextXAlignment = Enum.TextXAlignment.Left,
     })
 
     if hasMsg then
-        lbl(message, C.sub, 10, Enum.Font.Gotham, card, {
-            Size     = UDim2.new(0, textW + PAD, 0, 32),
-            Position = UDim2.new(0, textX, 0, 35),
+        lbl(message, C.sub, 11, Enum.Font.Gotham, card, {
+            Size     = UDim2.new(0, TW + PAD, 0, 30),
+            Position = UDim2.new(0, TX, 0, 39),
             ZIndex   = 501, TextWrapped = true,
             TextXAlignment = Enum.TextXAlignment.Left,
         })
     end
 
-    -- ── Close button — mirrors the window's trafficBtn (close.png icon) ───────
+    -- ── Close button (close.png, same style as window traffic buttons) ────────
     local closeIconId = UI.loadIcon("close")
     local xBtn = mk("TextButton", {
-        Size     = UDim2.new(0, 16, 0, 16),
-        Position = UDim2.new(1, -20, 0, 9),
+        Size     = UDim2.new(0, 14, 0, 14),
+        Position = UDim2.new(1, -22, 0, 11),
         BackgroundTransparency = 1,
         Text     = closeIconId == "" and "✕" or "",
         TextColor3 = C.muted, Font = Enum.Font.GothamBold, TextSize = 9,
@@ -696,27 +708,27 @@ function UI:Notify(opts)
     }, card)
     if closeIconId ~= "" then
         local xImg = mk("ImageLabel", {
-            Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1,
             Image = closeIconId, ImageColor3 = C.muted, ZIndex = 503,
         }, xBtn)
-        xBtn.MouseEnter:Connect(function() tw(xImg, { ImageColor3 = C.white }, .1) end)
+        xBtn.MouseEnter:Connect(function() tw(xImg, { ImageColor3 = C.text }, .1) end)
         xBtn.MouseLeave:Connect(function() tw(xImg, { ImageColor3 = C.muted }, .1) end)
     else
-        xBtn.MouseEnter:Connect(function() tw(xBtn, { TextColor3 = C.white }, .1) end)
+        xBtn.MouseEnter:Connect(function() tw(xBtn, { TextColor3 = C.text }, .1) end)
         xBtn.MouseLeave:Connect(function() tw(xBtn, { TextColor3 = C.muted }, .1) end)
     end
 
-    -- ── Progress bar (1px, shrinks left-to-right over duration) ──────────────
+    -- ── Progress bar (2px, shrinks left→right over duration) ─────────────────
     local bar = mk("Frame", {
-        Size = UDim2.new(1, 0, 0, 1), Position = UDim2.new(0, 0, 1, -1),
+        Size = UDim2.new(1, 0, 0, 2), Position = UDim2.new(0, 0, 1, -2),
         BackgroundColor3 = accent, BorderSizePixel = 0, ZIndex = 501,
     }, card)
 
     local entry = { card = card, h = NH }
     table.insert(self._notifStack, entry)
 
-    -- Slide in from right
-    tw(card, { Position = UDim2.new(1, -NW-16, 1, -NH-16) }, .28,
+    -- Slide in with spring (Back.Out)
+    tw(card, { Position = UDim2.new(1, -NW-16, 1, -NH-16) }, .3,
         Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 
     local dismissed = false
@@ -730,14 +742,14 @@ function UI:Notify(opts)
             local cy = e.card.Position.Y.Offset
             tw(e.card, { Position = UDim2.new(1, -NW-16, 1, cy + NH + 8) }, .2)
         end
-        tw(card, { Position = UDim2.new(1, NW + 20, 1, card.Position.Y.Offset) }, .2)
-        task.delay(.25, function() if card.Parent then card:Destroy() end end)
+        tw(card, { Position = UDim2.new(1, NW + 20, 1, card.Position.Y.Offset) }, .22)
+        task.delay(.28, function() if card.Parent then card:Destroy() end end)
     end
 
     xBtn.MouseButton1Click:Connect(dismiss)
 
     task.spawn(function()
-        tw(bar, { Size = UDim2.new(0, 0, 0, 1) }, duration, Enum.EasingStyle.Linear)
+        tw(bar, { Size = UDim2.new(0, 0, 0, 2) }, duration, Enum.EasingStyle.Linear)
         task.wait(duration)
         dismiss()
     end)
