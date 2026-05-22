@@ -611,17 +611,10 @@ function UI:Notify(opts)
     local accent = typeAccent[ntype] or C.blue
     local hasMsg = message ~= ""
 
-    -- ── Icon cache — downloaded once, reused on every subsequent call ─────────
-    if not self._notifIcons then
-        self._notifIcons = {
-            check       = UI.loadIcon("check"),
-            information = UI.loadIcon("information"),
-            close       = UI.loadIcon("close"),
-        }
-    end
-    local icons     = self._notifIcons
-    local iconId    = (ntype == "success") and icons.check or icons.information
-    local closeId   = icons.close
+    -- ── Icons — load each time (UI.loadIcon caches at disk level, so after the
+    -- first download repeated calls are instant; no stale-empty-string risk)
+    local iconId  = (ntype == "success") and UI.loadIcon("check") or UI.loadIcon("information")
+    local closeId = UI.loadIcon("close")
 
     -- ── Measurements  (direct port of notif-prototype.html) ──────────────────
     -- NH  = PT(12) + title(15) + [msg: gap(3)+line(15)] + PB(10) + bar(2)
