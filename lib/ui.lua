@@ -605,6 +605,7 @@ function UI:Notify(opts)
     local duration = opts.Duration or 4
     local ntype    = opts.Type     or "info"
 
+    -- ── Accent colour per type ────────────────────────────────────────────────
     local typeAccent = {
         info    = C.blue,
         success = C.green,
@@ -614,107 +615,132 @@ function UI:Notify(opts)
     local accent = typeAccent[ntype] or C.blue
     local hasMsg = message ~= ""
 
-    -- Type → icon file (success uses check.png, everything else information.png)
-    local typeIcon = {
-        success = UI.loadIcon("check"),
-        info    = UI.loadIcon("information"),
-        warning = UI.loadIcon("information"),
-        error   = UI.loadIcon("information"),
-    }
-    local iconId = typeIcon[ntype] or UI.loadIcon("information")
+    -- ── Icon cache — load once, reuse forever ─────────────────────────────────
+    if not self._notifIcons then
+        self._notifIcons = {
+            check       = UI.loadIcon("check"),
+            information = UI.loadIcon("information"),
+            close       = UI.loadIcon("close"),
+        }
+    end
+    local icons = self._notifIcons
+    local iconId = (ntype == "success") and icons.check or icons.information
+    local closeIconId = icons.close
 
-    -- Measurements (1:1 with notif-prototype.html)
-    -- .notif: width 300px
-    -- .notif-body padding: 12px(top) 14px(right) 10px(bottom) 20px(left)
-    -- .notif-icon: 15×15  .notif-text gap: 9px
-    -- .notif-message margin-top: 3px, font-size ~10px, line-height 1.45 (~15px/line)
-    -- .notif-bar: height 2px
+    -- ── Measurements (1:1 with notif-prototype.html) ──────────────────────────
+    -- .notif: width 300 | border-radius 10
+    -- .notif-body padding: 12t 14r 10b 20l | gap 9
+    -- .notif-icon: 15×15 | .notif-bar: 2px
     -- NH = PT(12) + title(15) + [msg: mt(3)+line(15)] + PB(10) + bar(2)
-    local NW  = 300
-    local NH  = hasMsg and 57 or 39
-    local PL  = 20   -- padding-left (accounts for 3px strip + 17px gap)
-    local PR  = 14   -- padding-right
-    local PT  = 12   -- padding-top
-    local PB  = 10   -- padding-bottom (above bar)
-    local GAP = 9    -- gap between icon and text block
+    local NW     = 300
+    local NH     = hasMsg and 57 or 39
+    local PL     = 20    -- left padding (3px strip + 17px gap)
+    local PR     = 14    -- right padding
+    local PT     = 12    -- top padding
+    local PB     = 10    -- bottom padding (above bar)
+    local GAP    = 9     -- gap: icon → text
+    local ICON_W = 15
+    local MARGIN = 16    -- screen edge margin
 
+    -- ── Stack management ──────────────────────────────────────────────────────
     self._notifStack = self._notifStack or {}
+    local STACK_CAP = 4
 
-    for _, e in ipairs(self._notifStack) do
-        local cy = e.card.Position.Y.Offset
-        tw(e.card, { Position = UDim2.new(1, -NW-16, 1, cy - NH - 8) }, .18)
+    -- Force-dismiss the oldest card when cap is reached
+    if #self._notifStack >= STACK_CAP then
+        local oldest = self._notifStack[1]
+        if oldest and oldest._dismiss then
+            oldest._dismiss()
+        end
     end
 
-    -- ── .notif — card ─────────────────────────────────────────────────────────
+    -- Shift existing cards up to make room for new one at the bottom
+    for _, e in ipairs(self._notifStack) do
+        local cy = e.card.Position.Y.Offset
+        tw(e.card, { Position = UDim2.new(1, -NW - MARGIN, 1, cy - NH - 8) }, .18)
+    end
+
+    -- ── Card (.notif) ─────────────────────────────────────────────────────────
     local card = mk("Frame", {
-        Size     = UDim2.new(0, NW, 0, NH),
-        Position = UDim2.new(1, NW + 20, 1, -NH - 16),
+        Size             = UDim2.new(0, NW, 0, NH),
+        Position         = UDim2.new(1, NW + 20, 1, -NH - MARGIN),
         BackgroundColor3 = Color3.fromRGB(16, 18, 28),
-        BorderSizePixel  = 0, ZIndex = 500,
+        BorderSizePixel  = 0,
+        ZIndex           = 500,
         ClipsDescendants = true,
     }, self._gui)
     rnd(card, 10)
     bdr(card, C.border, 1)
 
-    -- .notif::before — 3px left strip, accent, border-radius:99px
+    -- Left accent strip (.notif::before — 3px, border-radius 99)
     local strip = mk("Frame", {
-        Size = UDim2.new(0, 3, 1, 0), Position = UDim2.new(0, 0, 0, 0),
-        BackgroundColor3 = accent, BorderSizePixel = 0, ZIndex = 501,
+        Size             = UDim2.new(0, 3, 1, 0),
+        Position         = UDim2.new(0, 0, 0, 0),
+        BackgroundColor3 = accent,
+        BorderSizePixel  = 0,
+        ZIndex           = 501,
     }, card)
     rnd(strip, 99)
 
-    -- ── .notif-body ───────────────────────────────────────────────────────────
-
-    -- .notif-icon — 15×15, accent tint, no background, vertically centred in body
-    -- body top = PT, body bottom = NH-2(bar), centre = PT + (NH-2-PT-PB)/2
-    local ICON_W  = 15
-    local bodyH   = NH - 2 - PT - PB          -- inner body height (no bar/padding)
-    local iconY   = PT + math.floor((bodyH - ICON_W) / 2)
+    -- ── Icon (.notif-icon — 15×15, accent tint, vertically centred in body) ───
+    -- Body spans PT → NH-2(bar). Centre icon within that space.
+    local bodyH = NH - 2 - PT - PB
+    local iconY = PT + math.floor((bodyH - ICON_W) / 2)
     if iconId ~= "" then
         mk("ImageLabel", {
-            Size     = UDim2.new(0, ICON_W, 0, ICON_W),
-            Position = UDim2.new(0, PL, 0, iconY),
+            Size                 = UDim2.new(0, ICON_W, 0, ICON_W),
+            Position             = UDim2.new(0, PL, 0, iconY),
             BackgroundTransparency = 1,
-            Image = iconId, ImageColor3 = accent, ZIndex = 501,
+            Image                = iconId,
+            ImageColor3          = accent,
+            ZIndex               = 501,
         }, card)
     end
 
-    -- .notif-text — starts after icon + gap
-    local TX = iconId ~= "" and (PL + ICON_W + GAP) or PL
-    local TW = NW - TX - PR - 18   -- 18 = close btn width + small gap
+    -- ── Text block (.notif-text) ──────────────────────────────────────────────
+    -- TX is ALWAYS fixed — layout never shifts regardless of icon load state.
+    local TX = PL + ICON_W + GAP
+    local TW = NW - TX - PR - 18   -- 18 = close btn (14) + inner gap (4)
 
-    -- .notif-title — 12px bold, C.text
+    -- Title (.notif-title — 12px GothamBold, C.text)
     lbl(title, C.text, 12, Enum.Font.GothamBold, card, {
-        Size     = UDim2.new(0, TW, 0, 15),
-        Position = UDim2.new(0, TX, 0, PT),
-        ZIndex   = 501, TextXAlignment = Enum.TextXAlignment.Left,
+        Size           = UDim2.new(0, TW, 0, 15),
+        Position       = UDim2.new(0, TX, 0, PT),
+        ZIndex         = 501,
+        TextXAlignment = Enum.TextXAlignment.Left,
     })
 
-    -- .notif-message — 10px, C.sub, margin-top:3
+    -- Message (.notif-message — 10px Gotham, C.sub, margin-top 3)
     if hasMsg then
         lbl(message, C.sub, 10, Enum.Font.Gotham, card, {
-            Size     = UDim2.new(0, TW + PR, 0, 15),
-            Position = UDim2.new(0, TX, 0, PT + 15 + 3),
-            ZIndex   = 501, TextWrapped = true,
+            Size           = UDim2.new(0, TW, 0, 15),
+            Position       = UDim2.new(0, TX, 0, PT + 15 + 3),
+            ZIndex         = 501,
+            TextWrapped    = true,
             TextXAlignment = Enum.TextXAlignment.Left,
         })
     end
 
-    -- .notif-close  (14×14, opacity:.35 → C.muted, hover → C.text)
-    --   align-self: flex-start, margin-top: 1px  → absolute top-right
-    local closeIconId = UI.loadIcon("close")
+    -- ── Close button (.notif-close — 14×14, top-right, muted → text on hover) ─
     local xBtn = mk("TextButton", {
-        Size     = UDim2.new(0, 14, 0, 14),
-        Position = UDim2.new(1, -(PR + 14), 0, PT - 1),
+        Size                 = UDim2.new(0, 14, 0, 14),
+        Position             = UDim2.new(1, -(PR + 14), 0, PT - 1),
         BackgroundTransparency = 1,
-        Text = closeIconId == "" and "✕" or "",
-        TextColor3 = C.muted, Font = Enum.Font.GothamBold, TextSize = 9,
-        BorderSizePixel = 0, ZIndex = 502, AutoButtonColor = false,
+        Text                 = closeIconId == "" and "✕" or "",
+        TextColor3           = C.muted,
+        Font                 = Enum.Font.GothamBold,
+        TextSize             = 9,
+        BorderSizePixel      = 0,
+        ZIndex               = 502,
+        AutoButtonColor      = false,
     }, card)
     if closeIconId ~= "" then
         local xImg = mk("ImageLabel", {
-            Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1,
-            Image = closeIconId, ImageColor3 = C.muted, ZIndex = 503,
+            Size                 = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            Image                = closeIconId,
+            ImageColor3          = C.muted,
+            ZIndex               = 503,
         }, xBtn)
         xBtn.MouseEnter:Connect(function() tw(xImg, { ImageColor3 = C.text }, .15) end)
         xBtn.MouseLeave:Connect(function() tw(xImg, { ImageColor3 = C.muted }, .15) end)
@@ -723,36 +749,51 @@ function UI:Notify(opts)
         xBtn.MouseLeave:Connect(function() tw(xBtn, { TextColor3 = C.muted }, .15) end)
     end
 
-    -- .notif-bar  (height:2, accent, scaleX 1→0 over duration)
+    -- ── Progress bar (.notif-bar — 2px, accent, shrinks left→right) ──────────
     local bar = mk("Frame", {
-        Size = UDim2.new(1, 0, 0, 2), Position = UDim2.new(0, 0, 1, -2),
-        BackgroundColor3 = accent, BorderSizePixel = 0, ZIndex = 501,
+        Size             = UDim2.new(1, 0, 0, 2),
+        Position         = UDim2.new(0, 0, 1, -2),
+        BackgroundColor3 = accent,
+        BorderSizePixel  = 0,
+        ZIndex           = 501,
     }, card)
 
+    -- Register entry and attach dismiss handle before inserting into stack
     local entry = { card = card, h = NH }
     table.insert(self._notifStack, entry)
 
-    -- slide in (Back.Out, 0.28s)
-    tw(card, { Position = UDim2.new(1, -NW-16, 1, -NH-16) }, .28,
+    -- Slide in from right (Back.Out easing, 0.28s)
+    tw(card, { Position = UDim2.new(1, -NW - MARGIN, 1, -NH - MARGIN) }, .28,
         Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 
+    -- ── Dismiss logic ─────────────────────────────────────────────────────────
     local dismissed = false
     local function dismiss()
         if dismissed then return end
         dismissed = true
+
+        -- Remove this entry from the stack
         for i, e in ipairs(self._notifStack) do
             if e == entry then table.remove(self._notifStack, i); break end
         end
+
+        -- Shift remaining cards down to close the gap
         for _, e in ipairs(self._notifStack) do
             local cy = e.card.Position.Y.Offset
-            tw(e.card, { Position = UDim2.new(1, -NW-16, 1, cy + NH + 8) }, .18)
+            tw(e.card, { Position = UDim2.new(1, -NW - MARGIN, 1, cy + NH + 8) }, .18)
         end
+
+        -- Slide card out to the right, then destroy
         tw(card, { Position = UDim2.new(1, NW + 20, 1, card.Position.Y.Offset) }, .2)
         task.delay(.25, function() if card.Parent then card:Destroy() end end)
     end
 
+    -- Expose dismiss on the entry so the stack cap can force-dismiss oldest
+    entry._dismiss = dismiss
+
     xBtn.MouseButton1Click:Connect(dismiss)
 
+    -- Auto-dismiss after duration (bar shrinks in sync)
     task.spawn(function()
         tw(bar, { Size = UDim2.new(0, 0, 0, 2) }, duration, Enum.EasingStyle.Linear)
         task.wait(duration)
