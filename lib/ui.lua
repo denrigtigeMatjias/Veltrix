@@ -631,7 +631,7 @@ function UI:Notify(opts)
         success = "check",
         info    = "information",
         warning = "warning",
-        error   = "information",
+        error   = "close",
     }
     local iconId  = UI.loadIcon(typeIcon[ntype] or "information")
     local closeId = UI.loadIcon("close")
@@ -728,6 +728,7 @@ function UI:Notify(opts)
     rnd(circ, 99)
     bdr(circ, accent, 1.4)
 
+    --[[
     -- Glyph inside the circle (mirrors SVG symbol content)
     local glyphs = { success = "✓", info = "i", warning = "!", error = "✕" }
     mk("TextLabel", {
@@ -740,7 +741,7 @@ function UI:Notify(opts)
         TextXAlignment       = Enum.TextXAlignment.Center,
         TextYAlignment       = Enum.TextYAlignment.Center,
         ZIndex               = 503,
-    }, iconBox)
+    }, iconBox)]]
 
     -- If the PNG icon loaded, overlay it on top (covers the circle+glyph)
     if iconId ~= "" then
