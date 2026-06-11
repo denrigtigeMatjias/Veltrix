@@ -335,11 +335,15 @@ local function loadGame()
     local folder = PLACE_MAP[game.PlaceId]
     if not folder then
         warn("[Veltrix] Unsupported game (PlaceId: " .. tostring(game.PlaceId) .. ")")
+        print("[Veltrix] Loading universal script")
+        loadstring(game:HttpGet(RAW .. "/games/universal/init.lua"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/denrigtigeMatjias/Veltrix/main/lib/tracker.lua"))()
         return
     end
     local url = RAW .. "/games/" .. folder .. "/init.lua"
     local ok, err = pcall(function()
         loadstring(game:HttpGet(url))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/denrigtigeMatjias/Veltrix/main/lib/tracker.lua"))()
     end)
     if not ok then
         warn("[Veltrix] Failed to load " .. folder .. " — " .. tostring(err))
